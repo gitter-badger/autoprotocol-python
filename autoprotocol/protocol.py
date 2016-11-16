@@ -1,3 +1,5 @@
+from .liquid_handle_builders import location_builder, liquid_handle, \
+    old_aspirate_transports, old_dispense_transports, _MAX_SINGLE_TIP_CAPACITY
 from .container import Container, Well, WellGroup, SEAL_TYPES, COVER_TYPES
 from .container_type import ContainerType, _CONTAINER_TYPES
 from .unit import Unit, UnitError
@@ -7,6 +9,7 @@ from .util import check_valid_origin, check_stamp_append, check_valid_mag, \
     check_valid_mag_params, check_valid_gel_purify_extract, is_valid_well, \
     check_valid_incubate_params
 
+import warnings
 import sys
 if sys.version_info[0] >= 3:
     xrange = range
@@ -1006,6 +1009,10 @@ class Protocol(object):
             number of wells and one_source is not True.
 
         """
+        arg_list = list(locals().items())
+        arg_dict = {k: v for k, v in arg_list if v is not None}
+        if new_group:
+            warnings.warn("new_group has now been deprecated")
         # Check valid well inputs
         if not is_valid_well(source):
             raise TypeError("Source must be of type Well, list of Wells, or "
@@ -1014,7 +1021,6 @@ class Protocol(object):
             raise TypeError("Destination (dest) must be of type Well, list of "
                             "Wells, or WellGroup.")
 
-        opts = []
         source = WellGroup(source)
         dest = WellGroup(dest)
         len_source = len(source.wells)
@@ -1059,9 +1065,11 @@ class Protocol(object):
             try:
                 source_vol = [s.volume for s in source.wells]
                 if sum([a for a in volume]) > sum([a for a in source_vol]):
-                    raise RuntimeError("There is not enough volume in the source well(s) specified to complete "
-                                       "the transfers.")
-                if len_source >= len_dest and all(i > j for i, j in zip(source_vol, volume)):
+                    raise RuntimeError(
+                        "There is not enough volume in the source well(s) "
+                        "specified to complete the transfers.")
+                if len_source >= len_dest and all(
+                                i > j for i, j in zip(source_vol, volume)):
                     sources = source.wells[:len_dest]
                     destinations = dest.wells
                     volumes = volume
@@ -1107,144 +1115,72 @@ class Protocol(object):
                                    "must have a volume attribute (aliquot) "
                                    "associated with it.")
 
+        def location_helper(src_well, dest_well, xfer_vol):
+            # Volume accounting
+            if dest_well.volume:
+                dest_well.volume += xfer_vol
+            else:
+                dest_well.volume = xfer_vol
+            if src_well.volume:
+                src_well.volume -= xfer_vol
+
+            location_list = []
+            # check mix before and/or after parameters
+            if mix_kwargs and ("mix_before" not in mix_kwargs and (
+                                "mix_after" not in mix_kwargs)):
+                raise RuntimeError("If you specify mix arguments on "
+                                   "transfer() you must also specify "
+                                   "mix_before and/or mix_after=True.")
+
+            pipette_params = ["aspirate_speed", "dispense_speed",
+                              "aspirate_source", "dispense_target",
+                              "pre_buffer", "disposal_vol", "transit_vol",
+                              "blowout_buffer"]
+            pipette_args = {param: arg_dict[param] for param in pipette_params
+                            if param in arg_dict}
+            pipette_args.update(mix_kwargs)
+
+            aspirate_list = old_aspirate_transports(xfer_vol, **pipette_args)
+            dispense_list = old_dispense_transports(xfer_vol, **pipette_args)
+
+            location_list.append(location_builder(location=src_well,
+                                                  transports=aspirate_list))
+            location_list.append(location_builder(location=dest_well,
+                                                  transports=dispense_list))
+
+            return location_list
+
+        locations = []
         for s, d, v in list(zip(source.wells, dest.wells, volume)):
             self._remove_cover(s.container, "pipette from")
             self._remove_cover(d.container, "pipette into")
-            if v > Unit(900, "microliter"):
+            if v > _MAX_SINGLE_TIP_CAPACITY:
                 diff = Unit.fromstring(v)
-                while diff > Unit(900, "microliter"):
-                    # Organize transfer options into dictionary (for json
-                    # parsing)
-
-                    v = Unit(900, "microliter")
-
-                    xfer = {
-                        "from": s,
-                        "to": d,
-                        "volume": v
-                    }
-                    # Volume accounting
-                    if d.volume:
-                        d.volume += v
-                    else:
-                        d.volume = v
-                    if s.volume:
-                        s.volume -= v
-                    # mix before and/or after parameters
-                    if mix_kwargs and (
-                        "mix_before" not in mix_kwargs and (
-                            "mix_after" not in mix_kwargs)):
-                        raise RuntimeError("If you specify mix arguments on "
-                                           "transfer() you must also specify "
-                                           "mix_before and/or mix_after=True."
-                                           )
-                    if mix_kwargs.get("mix_before"):
-                        xfer["mix_before"] = {
-                            "volume": mix_kwargs.get(
-                                "mix_vol_b") or mix_kwargs.get(
-                                "mix_vol") or v / 2,
-                            "repetitions": mix_kwargs.get(
-                                "repetitions_b") or mix_kwargs.get(
-                                "repetitions") or 10,
-                            "speed":  mix_kwargs.get(
-                                "flowrate_b") or mix_kwargs.get(
-                                "flowrate") or "100:microliter/second"
-                        }
-                    if mix_kwargs.get("mix_after"):
-                        xfer["mix_after"] = {
-                            "volume":  mix_kwargs.get(
-                                "mix_vol_a") or mix_kwargs.get(
-                                "mix_vol") or v / 2,
-                            "repetitions": mix_kwargs.get(
-                                "repetitions_a") or mix_kwargs.get(
-                                "repetitions") or 10,
-                            "speed": mix_kwargs.get(
-                                "flowrate_a") or mix_kwargs.get(
-                                "flowrate") or "100:microliter/second"
-                        }
-                    # Append transfer options
-                    opt_list = ["aspirate_speed", "dispense_speed"]
-                    for option in opt_list:
-                        assign(xfer, option, eval(option))
-                    x_opt_list = ["x_aspirate_source",
-                                  "x_dispense_target",
-                                  "x_pre_buffer",
-                                  "x_disposal_vol",
-                                  "x_transit_vol",
-                                  "x_blowout_buffer"]
-                    for x_option in x_opt_list:
-                        assign(xfer, x_option, eval(x_option[2:]))
-                    if v > Unit(0, "microliter"):
-                        opts.append(xfer)
-
-                    diff -= Unit(900, "microliter")
-
+                while diff > _MAX_SINGLE_TIP_CAPACITY:
+                    v = _MAX_SINGLE_TIP_CAPACITY
+                    locations += location_helper(s, d, v)
+                    if not one_tip:
+                        self.instructions.append(
+                            liquid_handle(locations, tip_type=tip_type))
+                        locations = []
+                    diff -= _MAX_SINGLE_TIP_CAPACITY
                 v = diff
 
-            # Organize transfer options into dictionary (for json parsing)
-            xfer = {
-                "from": s,
-                "to": d,
-                "volume": v
-            }
-            # Volume accounting
-            if d.volume:
-                d.volume += v
-            else:
-                d.volume = v
-            if s.volume:
-                s.volume -= v
-            # mix before and/or after parameters
-            if mix_kwargs and ("mix_before" not in mix_kwargs and "mix_after" not in mix_kwargs):
-                raise RuntimeError("If you specify mix arguments on transfer()"
-                                   " you must also specify mix_before and/or"
-                                   " mix_after=True.")
-            if mix_kwargs.get("mix_before"):
-                xfer["mix_before"] = {
-                    "volume": mix_kwargs.get("mix_vol_b") or mix_kwargs.get("mix_vol") or v / 2,
-                    "repetitions": mix_kwargs.get("repetitions_b") or mix_kwargs.get("repetitions") or 10,
-                    "speed":  mix_kwargs.get("flowrate_b") or mix_kwargs.get("flowrate") or "100:microliter/second"
-                }
-            if mix_kwargs.get("mix_after"):
-                xfer["mix_after"] = {
-                    "volume":  mix_kwargs.get("mix_vol_a") or mix_kwargs.get("mix_vol") or v / 2,
-                    "repetitions": mix_kwargs.get("repetitions_a") or mix_kwargs.get("repetitions") or 10,
-                    "speed": mix_kwargs.get("flowrate_a") or mix_kwargs.get("flowrate") or "100:microliter/second"
-                }
-            # Append transfer options
-            opt_list = ["aspirate_speed", "dispense_speed"]
-            for option in opt_list:
-                assign(xfer, option, eval(option))
-            x_opt_list = ["x_aspirate_source", "x_dispense_target",
-                          "x_pre_buffer", "x_disposal_vol", "x_transit_vol",
-                          "x_blowout_buffer"]
-            for x_option in x_opt_list:
-                assign(xfer, x_option, eval(x_option[2:]))
-            if v > Unit(0, "microliter"):
-                opts.append(xfer)
+            locations += location_helper(s, d, v)
+            if not one_tip:
+                self.instructions.append(liquid_handle(locations,
+                                                       tip_type=tip_type))
+                locations = []
 
-        trans = {}
-        assign(trans, "x_tip_type", tip_type)
         if one_tip:
-            trans["transfer"] = opts
-            if new_group:
-                self.append(Pipette([trans]))
-            else:
-                self._pipette([trans])
-        else:
-            for x in opts:
-                trans = {}
-                assign(trans, "x_tip_type", tip_type)
-                trans["transfer"] = [x]
-                if new_group:
-                    self.append(Pipette([trans]))
-                else:
-                    self._pipette([trans])
+            self.instructions.append(liquid_handle(locations,
+                                                   tip_type=tip_type))
 
     def consolidate(self, sources, dest, volumes, allow_carryover=False,
                     mix_after=False, mix_vol=None,
                     flowrate="100:microliter/second", repetitions=10,
-                    aspirate_speed=None, dispense_speed=None, aspirate_source=None,
+                    aspirate_speed=None, dispense_speed=None,
+                    aspirate_source=None,
                     dispense_target=None, pre_buffer=None, transit_vol=None,
                     blowout_buffer=None, tip_type=None, new_group=False):
         """
@@ -1313,6 +1249,10 @@ class Protocol(object):
             If a volume list is supplied and the length does not match the
             number of source wells.
         """
+        arg_list = list(locals().items())
+        arg_dict = {k: v for k, v in arg_list if v}
+        if new_group:
+            warnings.warn("new_group has now been deprecated")
         # Check valid well inputs
         if not is_valid_well(sources):
             raise TypeError("Source must be of type Well, list of Wells, or "
@@ -1321,7 +1261,6 @@ class Protocol(object):
             raise TypeError("You can only consolidate liquid into one "
                             "destination well which must be of type Well.")
 
-        self._remove_cover(dest.container, "consolidate into")
         if isinstance(sources, (Well, basestring)):
             sources = [sources]
         if isinstance(volumes, list):
@@ -1335,46 +1274,55 @@ class Protocol(object):
             volumes = [Unit.fromstring(volumes).to("ul")] * len(sources)
 
         # Initialize instructions
-        cons = {"consolidate": {}}
-        cons_instr = cons["consolidate"]
-        assign(cons_instr, "to", dest)
-        from_wells = []
+        def location_helper(volume, s=None, d=None):
+            pipette_params = ["mix_after", "mix_vol", "flowrate", "repetitions",
+                              "aspirate_speed", "dispense_speed",
+                              "aspirate_source", "dispense_target",
+                              "pre_buffer", "transit_vol", "blowout_buffer",
+                              "tip_type"]
+            pipette_args = {param: eval(param) for param in pipette_params if
+                            param in arg_dict}
+
+            location_list = []
+
+            if s:
+                if s.volume:
+                    s.volume -= volume
+                aspirate_list = old_aspirate_transports(volume, **pipette_args)
+                location_list.append(location_builder(location=s,
+                                                      transports=aspirate_list))
+            if d:
+                if d.volume:
+                    d.volume += volume
+                else:
+                    d.volume = volume
+                dispense_list = old_dispense_transports(volume, **pipette_args)
+                location_list.append(location_builder(location=d,
+                                                      transports=dispense_list))
+
+            return location_list
+
         # Generate instructions for each transfer from source wells
+        locations = []
+        acc_vol = Unit("0:microliter")
+        self._remove_cover(dest.container, "consolidate into")
         for s, v in zip(sources, volumes):
             self._remove_cover(s.container, "consolidate from")
-            source_opts = {}
-            source_opts["well"] = s
-            source_opts["volume"] = v
-            assign(source_opts, "aspirate_speed", aspirate_speed)
-            assign(source_opts, "x_aspirate_source", aspirate_source)
-            from_wells.append(source_opts)
-            if dest.volume:
-                dest.volume += v
+            if acc_vol + v <= _MAX_SINGLE_TIP_CAPACITY:
+                locations.append(location_helper(v, s))
+            elif allow_carryover:
+                # If allow_carryover and overflow, first dispense
+                locations.append(location_helper(acc_vol, s=None, d=dest))
+                acc_vol = Unit("0:microliter")
+                locations.append(location_helper(v, s))
             else:
-                dest.volume = v
-            if s.volume:
-                s.volume -= v
-        assign(cons_instr, "from", from_wells)
-        # Append mix options
-        if mix_after:
-            cons_instr["mix_after"] = {
-                "volume": mix_vol,
-                "repetitions": repetitions,
-                "speed": flowrate
-            }
-        # Append transfer options
-        opt_list = ["allow_carryover", "dispense_speed"]
-        for option in opt_list:
-            assign(cons_instr, option, eval(option))
-        x_opt_list = ["x_dispense_target", "x_pre_buffer",
-                      "x_transit_vol", "x_blowout_buffer", "x_tip_type"]
-        for x_option in x_opt_list:
-            assign(cons_instr, x_option, eval(x_option[2:]))
-        # Create new pipette instruction group if necessary
-        if new_group:
-            self.append(Pipette([cons]))
-        else:
-            self._pipette([cons])
+                raise ValueError("Volume specified is greater than the maximum "
+                                 "tip capacity. Please specify `allow_carryover"
+                                 "=True`")
+            acc_vol += v
+
+        locations.append(location_helper(acc_vol, s=None, d=dest))
+        self.instructions.append(liquid_handle(locations, tip_type=tip_type))
 
     def acoustic_transfer(self, source, dest, volume, one_source=False,
                           droplet_size="25:nanoliter"):
