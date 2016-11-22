@@ -24,8 +24,8 @@ def liquid_handle(locations, mode="air_displacement", tip_type=None,
     # TODO: Add in checks on inputs. Possibly fill in defaults?
     arg_list = list(locals().items())
     arg_dict = {k: v for k, v in arg_list if v}
-    del arg_dict["locations"]
-    del arg_dict["mode"]
+    arg_dict.pop("locations", None)
+    arg_dict.pop("mode", None)
 
     return_dict = {}
     if len(arg_dict) > 0:
@@ -274,6 +274,17 @@ def old_aspirate_transports(volume, aspirate_speed=None, dispense_speed=None,
     """
     arg_dict = {k: v for k, v in list(locals().items()) if v}
     arg_dict.pop("dispense_target", None)
+    # Handle mix_kwargs by first removing non-applicable parameters
+    if "mix_kwargs" in arg_dict:
+        arg_dict.update(arg_dict.pop("mix_kwargs"))
+        [arg_dict.pop(mix_param, None) for mix_param in ["mix_after",
+                                                         "flowrate_a",
+                                                         "repetitions_a"]]
+        # Overwrite appropriate parameters
+        if "repetitions_b" in arg_dict:
+            arg_dict["repetitions"] = arg_dict.pop("repetitions_b")
+        if "flowrate_b" in arg_dict:
+            arg_dict["flowrate"] = arg_dict.pop("flowrate_b")
     return aspirate_transports_helper(volume,
                                       **parse_old_parameters(**arg_dict))
 
@@ -281,7 +292,8 @@ def old_aspirate_transports(volume, aspirate_speed=None, dispense_speed=None,
 def aspirate_transports_helper(volume, aspirate_flowrate=None, pre_buffer=None,
                                disposal_vol=None, transit_vol=None, tip_z=None,
                                calibrated_vol=None, primer_vol=None,
-                               following=None, **mix_kwargs):
+                               following=None, mix_before=None, mix_speed=None,
+                               repetitions=None, mix_vol=None):
     """
     Helper function for recreating similar transport behavior for aspirates.
     Note that volumes are not treated in the exact same manner, which may
@@ -313,6 +325,15 @@ def aspirate_transports_helper(volume, aspirate_flowrate=None, pre_buffer=None,
         Primer volume that will be aspirated in addition to volume
     following: bool
         If true, the tip will try to "follow" the liquid level as its aspirating
+    mix_before: Bool
+        Determines if mixing is carried out before aspirating
+    mix_speed: Unit
+        Mixing speed
+    repetitions: Int
+        Number of mixing repetitions
+    mix_vol: Unit
+        Volume of mix after dispensing
+
     Returns
     -------
     Aspirate transports : List
@@ -337,7 +358,7 @@ def aspirate_transports_helper(volume, aspirate_flowrate=None, pre_buffer=None,
         )]
 
     # Mix-before
-    if "mix_before" in mix_kwargs:
+    if mix_before:
         aspirate_transport_list += [(
             transport_builder(
                 mode_params=mode_params_builder(
@@ -348,14 +369,14 @@ def aspirate_transports_helper(volume, aspirate_flowrate=None, pre_buffer=None,
                 )
             )
         )]
-        mix_vol = (Unit(mix_kwargs.get("mix_vol")) or (volume / 2))
+        mix_vol = Unit(mix_vol or (volume / 2))
         aspirate_transport_list += (
             [
                 transport_builder(
                     volume=-mix_vol,
                     x_calibrated_volume=-mix_vol,
                     flowrate=flowrate_builder(
-                        mix_kwargs.get("flowrate") or "100:microliter/second"),
+                        mix_speed or "100:microliter/second"),
                     mode_params=mode_params_builder(
                         tip_z=z_position_builder(
                             reference="preceding_position"
@@ -366,14 +387,14 @@ def aspirate_transports_helper(volume, aspirate_flowrate=None, pre_buffer=None,
                     volume=mix_vol,
                     x_calibrated_volume=mix_vol,
                     flowrate=flowrate_builder(
-                        mix_kwargs.get("flowrate") or "100:microliter/second"),
+                        mix_speed or "100:microliter/second"),
                     mode_params=mode_params_builder(
                         tip_z=z_position_builder(
                             reference="preceding_position"
                         )
                     )
                 )
-            ] * (mix_kwargs.get("repetitions") or 10)
+            ] * (repetitions or 10)
         )
 
     # Do liquid sensing with specified parameters
@@ -513,6 +534,16 @@ def old_dispense_transports(volume, aspirate_speed=None, dispense_speed=None,
     """
     arg_dict = {k: v for k, v in list(locals().items()) if v}
     arg_dict.pop("aspirate_source", None)
+    # Handle mix_kwargs by first removing non-applicable parameters
+    if "mix_kwargs" in arg_dict:
+        arg_dict.update(arg_dict.pop("mix_kwargs"))
+        [arg_dict.pop(mix_param, None) for mix_param in ["mix_before", "flowrate_b",
+                                                         "repetitions_b"]]
+        # Overwrite appropriate parameters
+        if "repetitions_a" in arg_dict:
+            arg_dict["repetitions"] = arg_dict.pop("repetitions_a")
+        if "flowrate_a" in arg_dict:
+            arg_dict["flowrate"] = arg_dict.pop("flowrate_a")
     return dispense_transports_helper(volume,
                                       **parse_old_parameters(**arg_dict))
 
@@ -521,7 +552,8 @@ def dispense_transports_helper(volume, dispense_flowrate=None, pre_buffer=None,
                                disposal_vol=None, transit_vol=None,
                                blowout_buffer=None, tip_z=None,
                                following=None, calibrated_vol=None,
-                               **mix_kwargs):
+                               mix_speed=None, repetitions=None,
+                               mix_vol=None, mix_after=None):
     """
     Helper function for creating dispense behavior using transports
 
@@ -553,6 +585,14 @@ def dispense_transports_helper(volume, dispense_flowrate=None, pre_buffer=None,
         If true, the tip will try to "follow" the liquid level as its dispensing
     calibrated_vol: Unit
         Calibrated volume that will be aspirated
+    mix_after: Bool
+        Determines if mixing is carried out after dispensing
+    mix_speed: Unit
+        Mixing speed
+    repetitions: Int
+        Number of mixing repetitions
+    mix_vol: Unit
+        Volume of mix after dispensing
     Returns
     -------
     Dispense transports : List
@@ -605,7 +645,7 @@ def dispense_transports_helper(volume, dispense_flowrate=None, pre_buffer=None,
     ]
 
     # Mix-after
-    if "mix_after" in mix_kwargs:
+    if mix_after:
         dispense_transport_list += [
             transport_builder(
                 mode_params=mode_params_builder(
@@ -616,14 +656,14 @@ def dispense_transports_helper(volume, dispense_flowrate=None, pre_buffer=None,
                 )
             )
         ]
-        mix_vol = (Unit(mix_kwargs.get("mix_vol")) or (volume / 2))
+        mix_vol = Unit(mix_vol or (volume / 2))
         dispense_transport_list += (
             [
                 transport_builder(
                     volume=-mix_vol,
                     x_calibrated_volume=-mix_vol,
                     flowrate=flowrate_builder(
-                        mix_kwargs.get("flowrate") or "100:microliter/second"),
+                        mix_speed or "100:microliter/second"),
                     mode_params=mode_params_builder(
                         tip_z=z_position_builder(
                             reference="preceding_position"
@@ -634,14 +674,14 @@ def dispense_transports_helper(volume, dispense_flowrate=None, pre_buffer=None,
                     volume=mix_vol,
                     x_calibrated_volume=mix_vol,
                     flowrate=flowrate_builder(
-                        mix_kwargs.get("flowrate") or "100:microliter/second"),
+                        mix_speed or "100:microliter/second"),
                     mode_params=mode_params_builder(
                         tip_z=z_position_builder(
                             reference="preceding_position"
                         )
                     )
                 )
-            ] * (mix_kwargs.get("repetitions") or 10)
+            ] * (repetitions or 10)
         )
 
     # TODO: currently replicating original behavior, MUST change location
@@ -667,7 +707,8 @@ def dispense_transports_helper(volume, dispense_flowrate=None, pre_buffer=None,
 def parse_old_parameters(volume, aspirate_speed=None, dispense_speed=None,
                          aspirate_source=None, dispense_target=None,
                          pre_buffer=None, disposal_vol=None, transit_vol=None,
-                         blowout_buffer=None, **mix_kwargs):
+                         blowout_buffer=None, mix_before=None, mix_after=None,
+                         mix_vol=None, repetitions=None, flowrate=None):
     """
     Helper function for mapping old pipetting parameters to transport
     specific parameters
@@ -835,13 +876,18 @@ def parse_old_parameters(volume, aspirate_speed=None, dispense_speed=None,
         z_pos_dict.pop("detection_duration", None)
 
     tip_z = z_position_builder(**z_pos_dict) if z_pos_dict else None
+
     pipette_params = ["aspirate_flowrate", "dispense_flowrate", "pre_buffer",
                       "disposal_vol", "transit_vol", "blowout_buffer",
-                      "primer_vol", "calibrated_vol", "tip_z", "following"]
+                      "primer_vol", "calibrated_vol", "tip_z", "following",
+                      "mix_speed", "mix_before", "mix_after", "repetitions",
+                      "mix_vol"]
+
     arg_list = list(locals().items())
     pipette_args = {k: v for k, v in arg_list if k in pipette_params and v is
                     not None}
-    pipette_args.update(mix_kwargs)
 
+    # Handling mix kwargs
+    pipette_args["mix_speed"] = pipette_args.pop("flowrate", None)
     return pipette_args
 

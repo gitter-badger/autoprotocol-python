@@ -1165,8 +1165,9 @@ class Protocol(object):
                         locations = []
                     diff -= _MAX_SINGLE_TIP_CAPACITY
                 v = diff
-
-            locations += location_helper(s, d, v)
+            # Ignore 0 volume transfers <- copied from old behavior
+            if v > Unit("0:microliter"):
+                locations += location_helper(s, d, v)
             if not one_tip:
                 self.instructions.append(liquid_handle(locations,
                                                        tip_type=tip_type))
@@ -1282,6 +1283,7 @@ class Protocol(object):
                               "tip_type"]
             pipette_args = {param: eval(param) for param in pipette_params if
                             param in arg_dict}
+            pipette_args["mix_speed"] = pipette_args.pop("flowrate", None)
 
             location_list = []
 
