@@ -39,16 +39,15 @@ class ProtocolBasicTestCase(unittest.TestCase):
         protocol.distribute(resource.well("A1").set_volume("40:microliter"),
                             bacteria_wells, "5:microliter")
 
-        self.assertEqual(len(protocol.instructions), 1)
-        self.assertEqual(protocol.instructions[0].op, "pipette")
-        self.assertEqual(len(protocol.instructions[0].groups), 2)
+        self.assertEqual(len(protocol.instructions), 2)
+        self.assertEqual(protocol.instructions[0].op, "liquid_handle")
 
         protocol.incubate(bacteria, "warm_37", "30:minute")
 
-        self.assertEqual(len(protocol.instructions), 3)
-        self.assertEqual(protocol.instructions[1].op, "cover")
-        self.assertEqual(protocol.instructions[2].op, "incubate")
-        self.assertEqual(protocol.instructions[2].duration, "30:minute")
+        self.assertEqual(len(protocol.instructions), 4)
+        self.assertEqual(protocol.instructions[2].op, "cover")
+        self.assertEqual(protocol.instructions[3].op, "incubate")
+        self.assertEqual(protocol.instructions[3].duration, "30:minute")
 
 
 class ProtocolAppendTestCase(unittest.TestCase):
@@ -189,9 +188,7 @@ class DistributeTestCase(unittest.TestCase):
                      c.well(1),
                      "5:microliter")
         self.assertEqual(1, len(p.instructions))
-        self.assertEqual(
-            "distribute",
-            list(p.as_dict()["instructions"][0]["groups"][0].keys())[0])
+        self.assertEqual(2, len(p.instructions[0]["locations"]))
         self.assertTrue(Unit(5, 'microliter'), c.well(1).volume)
         self.assertTrue(Unit(15, 'microliter'), c.well(0).volume)
 
@@ -203,8 +200,6 @@ class DistributeTestCase(unittest.TestCase):
                      c.well(1),
                      "5:microliter")
         self.assertEqual(3, len(p.instructions))
-        self.assertEqual("distribute",
-                         list(p.as_dict()["instructions"][-1]["groups"][0].keys())[0])
         self.assertTrue(5, c.well(1).volume)
         self.assertTrue(15, c.well(0).volume)
         self.assertEqual(p.instructions[-2].op, "uncover")
@@ -217,9 +212,7 @@ class DistributeTestCase(unittest.TestCase):
                      c.wells_from(1, 3),
                      "5:microliter")
         self.assertEqual(1, len(p.instructions))
-        self.assertEqual(
-            "distribute",
-            list(p.as_dict()["instructions"][0]["groups"][0].keys())[0])
+        self.assertEqual(4, len(p.instructions[0]["locations"]))
         for w in c.wells_from(1, 3):
             self.assertTrue(Unit(5, 'microliter'), w.volume)
         self.assertTrue(Unit(5, 'microliter'), c.well(0).volume)
@@ -230,7 +223,7 @@ class DistributeTestCase(unittest.TestCase):
         srcs = c.wells_from(1, 2).set_volume("100:microliter")
         dests = c.wells_from(7, 4)
         p.distribute(srcs, dests, "30:microliter", allow_carryover=True)
-        self.assertEqual(2, len(p.instructions[0].groups))
+        self.assertEqual(6, len(p.instructions[0]["locations"]))
 
         # track source vols
         self.assertEqual(Unit(10, 'microliter'), c.well(1).volume)
@@ -243,20 +236,20 @@ class DistributeTestCase(unittest.TestCase):
         # test distribute from Well to Well
         p.distribute(c.well("A1").set_volume(
             "20:microliter"), c.well("A2"), "5:microliter")
-        self.assertTrue("distribute" in p.instructions[-1].groups[-1])
 
     def test_unit_conversion(self):
         p = Protocol()
         c = p.ref("test", None, "96-flat", discard=True)
         p.distribute(
             c.well(0).set_volume("100:microliter"), c.well(1), "200:nanoliter")
-        self.assertTrue(str(p.instructions[0].groups[0]["distribute"][
-                        "to"][0]["volume"]) == "0.2:microliter")
+        self.assertTrue(str(
+            p.instructions[0]["locations"][1][0]["transports"][-1]["volume"]) ==
+                        "0.2:microliter")
         p.distribute(c.well(2).set_volume("100:microliter"), c.well(
             3), ".1:milliliter", new_group=True)
         self.assertTrue(str(
-            p.instructions[-1].groups[0]["distribute"]["to"][
-                0]["volume"]) == "100.0:microliter")
+            p.instructions[1]["locations"][1][0]["transports"][-1]["volume"]) ==
+                        "100.0:microliter")
 
     def test_dispense_speed(self):
         p = Protocol()
@@ -264,11 +257,15 @@ class DistributeTestCase(unittest.TestCase):
         p.distribute(
             c.well(0).set_volume("100:microliter"), c.well(1), "2:microliter",
             dispense_speed="150:microliter/second")
-        self.assertTrue("dispense_speed" in p.instructions[-1].groups[-1]["distribute"]["to"][0])
+        self.assertTrue(str(p.instructions[0]["locations"][1][0]["transports"]
+                            [2]["flowrate"]["target"]) ==
+                        "150:microliter/second")
         p.distribute(
             c.well(0), c.well(1), "2:microliter",
-            distribute_target={"dispense_speed": "100:microliter/second"})
-        self.assertTrue("x_dispense_target" in p.instructions[-1].groups[-1]["distribute"]["to"][0])
+            distribute_target={"dispense_speed": "200:microliter/second"})
+        self.assertTrue(str(p.instructions[1]["locations"][1][0]["transports"]
+                            [2]["flowrate"]["target"]) ==
+                        "200:microliter/second")
 
 
 class TransferTestCase(unittest.TestCase):
@@ -534,7 +531,7 @@ class ConsolidateTestCase(unittest.TestCase):
         p.consolidate(c.wells_from(0, 3), c.well(4), "10:microliter")
         self.assertEqual(Unit(30, "microliter"), c.well(4).volume)
         self.assertEqual(
-            3, len(p.instructions[0].groups[0]["consolidate"]["from"]))
+            4, len(p.instructions[0]["locations"]))
 
     def test_one_source(self):
         p = Protocol()

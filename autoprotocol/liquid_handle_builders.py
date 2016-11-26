@@ -272,8 +272,9 @@ def old_aspirate_transports(volume, aspirate_speed=None, dispense_speed=None,
     -------
     Aspirate transports : List
     """
-    arg_dict = {k: v for k, v in list(locals().items()) if v}
+    arg_dict = {k: v for k, v in list(locals().items()) if v is not None}
     arg_dict.pop("dispense_target", None)
+    arg_dict.pop("dispense_speed", None)
     # Handle mix_kwargs by first removing non-applicable parameters
     if "mix_kwargs" in arg_dict:
         arg_dict.update(arg_dict.pop("mix_kwargs"))
@@ -534,6 +535,7 @@ def old_dispense_transports(volume, aspirate_speed=None, dispense_speed=None,
     """
     arg_dict = {k: v for k, v in list(locals().items()) if v}
     arg_dict.pop("aspirate_source", None)
+    arg_dict.pop("aspirate_speed", None)
     # Handle mix_kwargs by first removing non-applicable parameters
     if "mix_kwargs" in arg_dict:
         arg_dict.update(arg_dict.pop("mix_kwargs"))

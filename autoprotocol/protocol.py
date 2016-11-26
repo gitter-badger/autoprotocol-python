@@ -756,7 +756,7 @@ class Protocol(object):
         source : Well, WellGroup
             Well or wells to distribute liquid from.  If passed as a WellGroup
             with set_volume() called on it, liquid will be automatically be
-            drawn from the wells specified using the fill_wells function.
+            drawn from the wells specified.
         dest : Well, WellGroup
             Well or wells to distribute liquid to.
         volume : str, Unit, list
@@ -822,6 +822,10 @@ class Protocol(object):
             Wells or WellGroups.
 
         """
+        arg_list = list(locals().items())
+        arg_dict = {k: v for k, v in arg_list if v}
+        if new_group:
+            warnings.warn("new_group has now been deprecated")
         # Check valid well inputs
         if not is_valid_well(source):
             raise TypeError("Source must be of type Well, list of Wells, or "
@@ -830,48 +834,95 @@ class Protocol(object):
             raise TypeError("Destination (dest) must be of type Well, list of "
                             "Wells, or WellGroup.")
 
-        opts = {}
-        try:
-            dists = self.fill_wells(dest, source, volume, distribute_target, dispense_speed)
-        except ValueError:
-            raise RuntimeError("When distributing liquid, source well(s) "
-                               "must have an associated volume (aliquot).")
-        groups = []
-        for d in dists:
-            opts = {}
-            if mix_before:
-                if not mix_vol:
-                    raise RuntimeError("No mix volume specified for "
-                                       "mix_before.")
-                opts["mix_before"] = {
-                    "volume": mix_vol,
-                    "repetitions": repetitions,
-                    "speed": flowrate
-                }
-            if allow_carryover:
-                opts["allow_carryover"] = allow_carryover
-            self._remove_cover(d["from"].container, "pipette from")
-            [self._remove_cover(t['well'].container, "pipette to")
-             for t in d['to']]
-            opts["from"] = d["from"]
-            opts["to"] = d["to"]
-
-            # Append transfer options
-            opt_list = ["aspirate_speed", "allow_carryover"]
-            for option in opt_list:
-                assign(opts, option, eval(option))
-            x_opt_list = ["x_aspirate_source", "x_pre_buffer",
-                          "x_disposal_vol", "x_transit_vol",
-                          "x_blowout_buffer", "x_tip_type"]
-            for x_option in x_opt_list:
-                assign(opts, x_option, eval(x_option[2:]))
-
-            groups.append({"distribute": opts})
-
-        if new_group:
-            self.append(Pipette(groups))
+        sources = WellGroup(source)
+        dests = WellGroup(dest)
+        if isinstance(volume, list):
+            if len(volume) != len(dests.wells):
+                raise RuntimeError("List length of volumes provided for "
+                                   "distribution does not match the number of "
+                                   " destination wells")
+            volume = [Unit.fromstring(x) for x in volume]
         else:
-            self._pipette(groups)
+            volume = [Unit.fromstring(volume)] * len(dests.wells)
+
+        # Initialize instructions
+        def location_helper(v, s=None, d=None):
+            pipette_params = ["mix_after", "mix_vol", "flowrate",
+                              "repetitions",
+                              "aspirate_speed", "dispense_speed",
+                              "aspirate_source", "dispense_target",
+                              "pre_buffer", "transit_vol", "blowout_buffer",
+                              "tip_type"]
+            pipette_args = {param: arg_dict[param] for param in
+                            pipette_params
+                            if param in arg_dict}
+
+            location_list = []
+
+            if s:
+                aspirate_list = old_aspirate_transports(v,
+                                                        **pipette_args)
+                location_list.append(location_builder(location=s,
+                                                      transports=aspirate_list))
+            if d:
+                dispense_list = old_dispense_transports(v,
+                                                        **pipette_args)
+                location_list.append(location_builder(location=d,
+                                                      transports=dispense_list))
+                if d.volume:
+                    d.volume += v
+                else:
+                    d.volume = v
+
+            return location_list
+
+        locations = []
+        acc_vols = []
+        src_idx = 0
+        src = sources.wells[0]
+
+        def get_w(well, acc_vols):
+            acc_vols.append(acc_vols[-1])
+            return well
+
+        for d, v in list(zip(dests.wells, volume)):
+            v = v.to("ul")
+            if src.volume < v:
+                # find a src well with enough volume
+                src = next(
+                    (get_w(w, acc_vols) for w in sources.wells if
+                     w.volume >= v), None)
+                if src is None:
+                    raise RuntimeError(
+                        "no well in source group has more than %s %s(s)" %
+                        (str(v).rsplit(":")[0], str(v).rsplit(":")[1]))
+                src_idx += 1
+            if len(acc_vols) == 0:
+                acc_vols = [0]
+            else:
+                acc_vols[src_idx] += 1
+            if src.volume:
+                src.volume -= v
+
+        for idx, d, v in list(zip(range(len(dests.wells)), dests.wells, volume)):
+            v = v.to("ul")
+            if idx == 0:
+                self._remove_cover(src.container, "distribute from")
+                locations.append(location_helper(v * acc_vols[0], src))
+                last_idx = acc_vols[0]
+                acc_vols = acc_vols[1:]
+            elif len(acc_vols) != 0 and idx == acc_vols[0]:
+                num_dispenses = acc_vols[0] - last_idx
+                if num_dispenses > 0:
+                    self._remove_cover(src.container, "distribute from")
+                    locations.append(location_helper(v * num_dispenses, src))
+                last_idx = acc_vols[0]
+                acc_vols = acc_vols[1:]
+            self._remove_cover(d.container, "distribute into")
+            locations.append(location_helper(v, s=None, d=d))
+
+        self.instructions.append(
+            liquid_handle(locations, tip_type=tip_type))
 
     def transfer(self, source, dest, volume, one_source=False, one_tip=False,
                  aspirate_speed=None, dispense_speed=None,
@@ -1281,26 +1332,25 @@ class Protocol(object):
                               "aspirate_source", "dispense_target",
                               "pre_buffer", "transit_vol", "blowout_buffer",
                               "tip_type"]
-            pipette_args = {param: eval(param) for param in pipette_params if
-                            param in arg_dict}
-            pipette_args["mix_speed"] = pipette_args.pop("flowrate", None)
+            pipette_args = {param: arg_dict[param] for param in pipette_params
+                            if param in arg_dict}
 
             location_list = []
 
             if s:
-                if s.volume:
-                    s.volume -= volume
                 aspirate_list = old_aspirate_transports(volume, **pipette_args)
                 location_list.append(location_builder(location=s,
                                                       transports=aspirate_list))
+                if s.volume:
+                    s.volume -= volume
             if d:
+                dispense_list = old_dispense_transports(volume, **pipette_args)
+                location_list.append(location_builder(location=d,
+                                                      transports=dispense_list))
                 if d.volume:
                     d.volume += volume
                 else:
                     d.volume = volume
-                dispense_list = old_dispense_transports(volume, **pipette_args)
-                location_list.append(location_builder(location=d,
-                                                      transports=dispense_list))
 
             return location_list
 
@@ -5284,79 +5334,6 @@ class Protocol(object):
             v = self.refs[k]
             if v.container is container:
                 return k
-
-    @staticmethod
-    def fill_wells(dst_group, src_group, volume, distribute_target=None, dispense_speed=None):
-        """
-        Distribute liquid to a WellGroup, sourcing the liquid from a group
-        of wells all containing the same substance.
-
-        Parameters
-        ----------
-        dst_group : WellGroup
-            WellGroup to distribute liquid to
-        src_group : WellGroup
-            WellGroup containing the substance to be distributed
-        volume : str, Unit
-            volume of liquid to be distributed to each destination well
-
-        Returns
-        -------
-        distributes : list
-            List of distribute groups
-
-        Raises
-        ------
-        RuntimeError
-            if source wells run out of liquid before distributing to all
-            designated destination wells
-        RuntimeError
-            if length of list of volumes does not match the number of
-            destination wells to be distributed to
-
-        """
-
-        src = None
-        distributes = []
-        src_group = WellGroup(src_group)
-        dst_group = WellGroup(dst_group)
-        if isinstance(volume, list):
-            if len(volume) != len(dst_group.wells):
-                raise RuntimeError("List length of volumes provided for "
-                                   "distribution does not match the number of "
-                                   " destination wells")
-            volume = [Unit.fromstring(x) for x in volume]
-        else:
-            volume = [Unit.fromstring(volume)] * len(dst_group.wells)
-        for d, v in list(zip(dst_group.wells, volume)):
-            v = v.to("ul")
-            if len(distributes) == 0 or src.volume < v:
-                # find a src well with enough volume
-                src = next(
-                    (w for w in src_group.wells if w.volume >= v), None)
-                if src is None:
-                    raise RuntimeError(
-                        "no well in source group has more than %s %s(s)" %
-                        (str(v).rsplit(":")[0], str(v).rsplit(":")[1]))
-                distributes.append({
-                    "from": src,
-                    "to": []
-                })
-            opts = {
-                "well": d,
-                "volume": v
-            }
-            if distribute_target:
-                opts["x_dispense_target"] = distribute_target
-            if dispense_speed:
-                opts["dispense_speed"] = dispense_speed
-            distributes[-1]["to"].append(opts)
-            src.volume -= v
-            if d.volume:
-                d.volume += v
-            else:
-                d.volume = v
-        return distributes
 
     def _pipette(self, groups):
         """Append given pipette groups to the protocol
