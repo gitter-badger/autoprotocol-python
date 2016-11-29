@@ -188,7 +188,7 @@ class DistributeTestCase(unittest.TestCase):
                      c.well(1),
                      "5:microliter")
         self.assertEqual(1, len(p.instructions))
-        self.assertEqual(2, len(p.instructions[0]["locations"]))
+        self.assertEqual(2, len(p.instructions[0].locations))
         self.assertTrue(Unit(5, 'microliter'), c.well(1).volume)
         self.assertTrue(Unit(15, 'microliter'), c.well(0).volume)
 
@@ -212,7 +212,7 @@ class DistributeTestCase(unittest.TestCase):
                      c.wells_from(1, 3),
                      "5:microliter")
         self.assertEqual(1, len(p.instructions))
-        self.assertEqual(4, len(p.instructions[0]["locations"]))
+        self.assertEqual(4, len(p.instructions[0].locations))
         for w in c.wells_from(1, 3):
             self.assertTrue(Unit(5, 'microliter'), w.volume)
         self.assertTrue(Unit(5, 'microliter'), c.well(0).volume)
@@ -223,7 +223,7 @@ class DistributeTestCase(unittest.TestCase):
         srcs = c.wells_from(1, 2).set_volume("100:microliter")
         dests = c.wells_from(7, 4)
         p.distribute(srcs, dests, "30:microliter", allow_carryover=True)
-        self.assertEqual(6, len(p.instructions[0]["locations"]))
+        self.assertEqual(6, len(p.instructions[0].locations))
 
         # track source vols
         self.assertEqual(Unit(10, 'microliter'), c.well(1).volume)
@@ -243,12 +243,12 @@ class DistributeTestCase(unittest.TestCase):
         p.distribute(
             c.well(0).set_volume("100:microliter"), c.well(1), "200:nanoliter")
         self.assertTrue(str(
-            p.instructions[0]["locations"][1][0]["transports"][-1]["volume"]) ==
+            p.instructions[0].locations[1][0]["transports"][-1]["volume"]) ==
                         "0.2:microliter")
         p.distribute(c.well(2).set_volume("100:microliter"), c.well(
             3), ".1:milliliter", new_group=True)
         self.assertTrue(str(
-            p.instructions[1]["locations"][1][0]["transports"][-1]["volume"]) ==
+            p.instructions[1].locations[1][0]["transports"][-1]["volume"]) ==
                         "100.0:microliter")
 
     def test_dispense_speed(self):
@@ -257,13 +257,13 @@ class DistributeTestCase(unittest.TestCase):
         p.distribute(
             c.well(0).set_volume("100:microliter"), c.well(1), "2:microliter",
             dispense_speed="150:microliter/second")
-        self.assertTrue(str(p.instructions[0]["locations"][1][0]["transports"]
+        self.assertTrue(str(p.instructions[0].locations[1][0]["transports"]
                             [2]["flowrate"]["target"]) ==
                         "150:microliter/second")
         p.distribute(
             c.well(0), c.well(1), "2:microliter",
             distribute_target={"dispense_speed": "200:microliter/second"})
-        self.assertTrue(str(p.instructions[1]["locations"][1][0]["transports"]
+        self.assertTrue(str(p.instructions[1].locations[1][0]["transports"]
                             [2]["flowrate"]["target"]) ==
                         "200:microliter/second")
 
@@ -276,7 +276,7 @@ class TransferTestCase(unittest.TestCase):
         p.transfer(c.well(0), c.well(1), "20:microliter")
         self.assertEqual(Unit(20, "microliter"), c.well(1).volume)
         self.assertEqual(None, c.well(0).volume)
-        self.assertTrue(p.instructions[-1]["op"] == "liquid_handle")
+        self.assertTrue(p.instructions[-1].op == "liquid_handle")
 
     def test_uncover_before_transfer(self):
         p = Protocol()
@@ -286,7 +286,7 @@ class TransferTestCase(unittest.TestCase):
         self.assertEqual(3, len(p.instructions))
         self.assertEqual(Unit(20, "microliter"), c.well(1).volume)
         self.assertEqual(None, c.well(0).volume)
-        self.assertTrue(p.instructions[-1]["op"] == "liquid_handle")
+        self.assertTrue(p.instructions[-1].op == "liquid_handle")
         self.assertTrue(p.instructions[-2].op == "uncover")
         self.assertFalse(c.cover)
 
@@ -301,15 +301,15 @@ class TransferTestCase(unittest.TestCase):
         self.assertEqual(3, len(p.instructions))
         self.assertEqual(
             Unit(900, 'microliter'),
-            p.instructions[0]['locations'][1]['transports'][-1]["volume"]
+            p.instructions[0].locations[1]['transports'][-1]["volume"]
         )
         self.assertEqual(
             Unit(900, 'microliter'),
-            p.instructions[1]['locations'][1]['transports'][-1]["volume"]
+            p.instructions[1].locations[1]['transports'][-1]["volume"]
         )
         self.assertEqual(
             Unit(200, 'microliter'),
-            p.instructions[2]['locations'][1]['transports'][-1]["volume"]
+            p.instructions[2].locations[1]['transports'][-1]["volume"]
         )
 
     def test_gt_900uL_wellgroup_transfer(self):
@@ -337,11 +337,11 @@ class TransferTestCase(unittest.TestCase):
             )
         )
         self.assertEqual(
-            len(p.instructions[0]['locations'][0]['transports']),
-            len(p.instructions[1]['locations'][0]['transports'])
+            len(p.instructions[0].locations[0]['transports']),
+            len(p.instructions[1].locations[0]['transports'])
         )
         self.assertEqual(
-            p.instructions[0]['locations'][0]["transports"][1]['mode_params'][
+            p.instructions[0].locations[0]["transports"][1]['mode_params'][
                 'tip_position']['position_z'],
             {'offset': '.004:meter', 'reference': 'well_bottom'}
         )
@@ -378,34 +378,34 @@ class TransferTestCase(unittest.TestCase):
         p.transfer(c.wells_from(0, 2).set_volume("50:microliter"),
                    c.wells_from(2, 2), "40:microliter", one_source=True)
         self.assertEqual(2, len(p.instructions))
-        self.assertFalse(p.instructions[0]['locations'][0]['location'] ==
-                         p.instructions[1]['locations'][0]['location'])
+        self.assertFalse(p.instructions[0].locations[0]['location'] ==
+                         p.instructions[1].locations[0]['location'])
         p.transfer(c.wells_from(0, 2).set_volume("100:microliter"),
                    c.wells_from(2, 4), "40:microliter", one_source=True)
         self.assertEqual(7, len(p.instructions))
-        self.assertTrue(p.instructions[2]['locations'][0]['location'] ==
-                         p.instructions[4]['locations'][0]['location'])
-        self.assertTrue(p.instructions[4]['locations'][0]["transports"][2]["volume"]
+        self.assertTrue(p.instructions[2].locations[0]['location'] ==
+                         p.instructions[4].locations[0]['location'])
+        self.assertTrue(p.instructions[4].locations[0]["transports"][2]["volume"]
                         == Unit.fromstring("-25:microliter"))
         p.transfer(c.wells_from(0, 2).set_volume("100:microliter"),
                    c.wells_from(2, 4),
                    ["20:microliter", "40:microliter",
                     "60:microliter", "80:microliter"], one_source=True)
         self.assertEqual(12, len(p.instructions))
-        self.assertTrue(p.instructions[7]['locations'][0]['location'] ==
-                        p.instructions[9]['locations'][0]['location'])
-        self.assertFalse(p.instructions[9]['locations'][0]['location'] ==
-                         p.instructions[10]['locations'][0]['location'])
+        self.assertTrue(p.instructions[7].locations[0]['location'] ==
+                        p.instructions[9].locations[0]['location'])
+        self.assertFalse(p.instructions[9].locations[0]['location'] ==
+                         p.instructions[10].locations[0]['location'])
         self.assertEqual(Unit.fromstring("-25:microliter"), p.instructions[
-                         10]["locations"][0]["transports"][2]["volume"])
+                         10].locations[0]["transports"][2]["volume"])
         p.transfer(c.wells_from(0, 2).set_volume("50:microliter"),
                    c.wells(2), "100:microliter", one_source=True)
         c.well(0).set_volume("50:microliter")
         c.well(1).set_volume("200:microliter")
         p.transfer(c.wells_from(0, 2), c.well(
             1), "100:microliter", one_source=True)
-        self.assertFalse(p.instructions[14]['locations'][0]['location'] ==
-                         p.instructions[15]['locations'][0]['location'])
+        self.assertFalse(p.instructions[14].locations[0]['location'] ==
+                         p.instructions[15].locations[0]['location'])
         c.well(0).set_volume("100:microliter")
         c.well(1).set_volume("0:microliter")
         c.well(2).set_volume("100:microliter")
@@ -423,11 +423,11 @@ class TransferTestCase(unittest.TestCase):
         c = p.ref("test", None, "96-flat", discard=True)
         p.transfer(c.well(0), c.well(1), "200:nanoliter")
         self.assertTrue(
-            str(p.instructions[0]["locations"][0]["transports"][2]["volume"]) ==
+            str(p.instructions[0].locations[0]["transports"][2]["volume"]) ==
             "-5.2:microliter")
         p.transfer(c.well(1), c.well(2), ".5:milliliter", new_group=True)
         self.assertTrue(
-            str(p.instructions[1]["locations"][0]["transports"][2]["volume"]) ==
+            str(p.instructions[1].locations[0]["transports"][2]["volume"]) ==
             "-505.0:microliter")
 
     def test_volume_rounding(self):
@@ -461,42 +461,42 @@ class TransferTestCase(unittest.TestCase):
         p.transfer(c.well(0), c.well(1), "12:microliter", mix_after=True,
                    mix_vol="10:microliter", repetitions_a=20)
         self.assertTrue(int((len(
-            p.instructions[-1]["locations"][1]["transports"][4:])) / 2
+            p.instructions[-1].locations[1]["transports"][4:])) / 2
                             ) == 20)
         p.transfer(c.well(0), c.well(1), "12:microliter", mix_after=True,
                    mix_vol="10:microliter", repetitions_b=20)
         self.assertTrue(int((len(
-            p.instructions[-1]["locations"][1]["transports"][4:])) / 2
+            p.instructions[-1].locations[1]["transports"][4:])) / 2
                             ) == 10)
         p.transfer(c.well(0), c.well(1), "12:microliter", mix_after=True)
         self.assertTrue(int((len(
-            p.instructions[-1]["locations"][1]["transports"][4:])) / 2
+            p.instructions[-1].locations[1]["transports"][4:])) / 2
                             ) == 10)
         self.assertTrue(str(
-            p.instructions[-1]["locations"][1]["transports"][4]["flowrate"][
+            p.instructions[-1].locations[1]["transports"][4]["flowrate"][
                 "target"]) == "100:microliter/second")
         self.assertTrue(str(
-            p.instructions[-1]["locations"][1]["transports"][4]["volume"]
+            p.instructions[-1].locations[1]["transports"][4]["volume"]
                         ) == "-6.0:microliter")
         p.transfer(c.well(0), c.well(1), "12:microliter", mix_before=True,
                    mix_vol="10:microliter", repetitions_b=20)
         self.assertTrue(int(len(
-            p.instructions[-1]["locations"][0]["transports"][2:-5]) / 2
+            p.instructions[-1].locations[0]["transports"][2:-5]) / 2
                             ) == 20)
         p.transfer(c.well(0), c.well(1), "12:microliter", mix_before=True,
                    mix_vol="10:microliter", repetitions_a=20)
         self.assertTrue(int(len(
-                p.instructions[-1]["locations"][0]["transports"][2:-5]) / 2
+                p.instructions[-1].locations[0]["transports"][2:-5]) / 2
                             ) == 10)
         p.transfer(c.well(0), c.well(1), "12:microliter", mix_before=True)
         self.assertTrue(int(len(
-            p.instructions[-1]["locations"][0]["transports"][2:-5]) / 2
+            p.instructions[-1].locations[0]["transports"][2:-5]) / 2
                             ) == 10)
         self.assertTrue(str(
-            p.instructions[-1]["locations"][0]["transports"][2]["flowrate"][
+            p.instructions[-1].locations[0]["transports"][2]["flowrate"][
                 "target"]) == "100:microliter/second")
         self.assertTrue(str(
-            p.instructions[-1]["locations"][0]["transports"][2]["volume"])
+            p.instructions[-1].locations[0]["transports"][2]["volume"])
                         == "-6.0:microliter")
 
     def test_mix_false(self):
@@ -504,18 +504,18 @@ class TransferTestCase(unittest.TestCase):
         c = p.ref("test", None, "96-deep", discard=True)
         p.transfer(c.well(0), c.well(1), "20:microliter", mix_after=False)
         self.assertTrue(
-            len(p.instructions[0]["locations"][1]["transports"]) == 3)
+            len(p.instructions[0].locations[1]["transports"]) == 3)
         p.transfer(c.well(0), c.well(1), "20:microliter", mix_before=False)
         self.assertTrue(
-            len(p.instructions[1]["locations"][0]["transports"]) == 6)
+            len(p.instructions[1].locations[0]["transports"]) == 6)
         p.transfer(c.well(0), c.well(1), "2000:microliter", mix_after=False)
         for i in range(2, 5):
             self.assertTrue(
-                len(p.instructions[i]["locations"][1]["transports"]) == 3)
+                len(p.instructions[i].locations[1]["transports"]) == 3)
         p.transfer(c.well(0), c.well(1), "2000:microliter", mix_before=False)
         for i in range(5, 8):
             self.assertTrue(
-                len(p.instructions[i]["locations"][0]["transports"]) == 6)
+                len(p.instructions[i].locations[0]["transports"]) == 6)
 
 
 class ConsolidateTestCase(unittest.TestCase):
@@ -531,7 +531,7 @@ class ConsolidateTestCase(unittest.TestCase):
         p.consolidate(c.wells_from(0, 3), c.well(4), "10:microliter")
         self.assertEqual(Unit(30, "microliter"), c.well(4).volume)
         self.assertEqual(
-            4, len(p.instructions[0]["locations"]))
+            4, len(p.instructions[0].locations))
 
     def test_one_source(self):
         p = Protocol()
@@ -1333,15 +1333,15 @@ class MixTestCase(unittest.TestCase):
                   discard=True).well(0).set_volume("20:microliter")
         p.mix(w, "5:microliter")
         self.assertEqual(Unit(20, "microliter"), w.volume)
-        self.assertTrue("mix" in p.instructions[-1].groups[-1])
+        self.assertTrue(p.instructions[-1].op == "liquid_handle")
 
     def test_mix_one_tip(self):
         p = Protocol()
         c = p.ref("test", None, "96-flat", discard=True)
         p.mix(c.wells(0, 1, 2), "5:microliter", one_tip=False)
-        self.assertEqual(len(p.instructions[-1].groups), 3)
+        self.assertEqual(len(p.instructions), 3)
         p.mix(c.wells(0, 1, 2, 4), "5:microliter", one_tip=True)
-        self.assertEqual(len(p.instructions[-1].groups), 4)
+        self.assertEqual(len(p.instructions), 4)
 
 
 class MagneticTransferTestCase(unittest.TestCase):

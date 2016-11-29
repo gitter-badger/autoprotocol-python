@@ -1,4 +1,7 @@
 import json
+
+from autoprotocol.liquid_handle_builders import shape_builder
+
 from .pipette_tools import assign
 
 
@@ -68,6 +71,49 @@ class Pipette(Instruction):
             "op": "pipette",
             "groups": groups
         })
+
+
+class LiquidHandle(Instruction):
+    '''
+    A liquid handle instruction is constructed as a list of locations, where
+    each location consists of the well location and the tip transports carried
+    out within the well.
+
+    Each liquid handle instruction corresponds to a single tip or single set
+    of tips.
+
+    Parameters
+    ----------
+    locations: List[location_builder()]
+        List of locations
+    shape: shape_builder()
+        Shape parameter
+    mode: String
+        Accepts only "air_displacement" for now
+    tip_type: String
+        Only applicable when "air_displacement" is the method
+    '''
+
+    def __init__(self, locations, shape=shape_builder(1, 1, "SBS96"),
+                 mode="air_displacement", tip_type=None):
+        lh = {
+            "op": "liquid_handle",
+            "locations": locations
+        }
+
+        # Minimize writing defaults
+        if mode != "air_displacement":
+            if tip_type:
+                raise ValueError("Parameter tip_type is only valid for air "
+                                 "displacement mode")
+            lh["mode"] = mode
+        if shape != shape_builder(1, 1, "SBS96"):
+            lh["shape"] = shape
+        # Do update below when more mode_params are added
+        if tip_type:
+            lh["mode_params"] = {"tip_type": tip_type}
+
+        super(LiquidHandle, self).__init__(lh)
 
 
 class MagneticTransfer(Instruction):

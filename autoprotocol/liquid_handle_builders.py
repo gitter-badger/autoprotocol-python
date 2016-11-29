@@ -1,41 +1,6 @@
-import warnings
-
 from .unit import Unit
 
 _MAX_SINGLE_TIP_CAPACITY = Unit(900, "microliter")
-
-
-def liquid_handle(locations, mode="air_displacement", tip_type=None,
-                  shape=None):
-    """
-    Parameters
-    ----------
-    locations: List[location_builder()]
-    mode: String
-        Accepts only "air_displacement" for now
-    tip_type: String
-        Only applicable when "air_displacement" is the methods
-    shape: shape_builder()
-        Shape parameters
-    Returns
-    -------
-    Liquid handle instruction: Dictionary
-    """
-    # TODO: Add in checks on inputs. Possibly fill in defaults?
-    arg_list = list(locals().items())
-    arg_dict = {k: v for k, v in arg_list if v}
-    arg_dict.pop("locations", None)
-    arg_dict.pop("mode", None)
-
-    return_dict = {}
-    if len(arg_dict) > 0:
-        return_dict["mode_params"] = arg_dict
-    return_dict["locations"] = locations
-    return_dict["op"] = "liquid_handle"
-
-    if mode != "air_displacement":
-        return_dict["mode"] = mode
-    return return_dict
 
 
 def shape_builder(rows=1, columns=1, format="SBS96"):
@@ -211,6 +176,48 @@ def z_position_builder(reference=None, offset=None,
         if fallback:
             position_z_dict["detection"]["fallback"] = fallback
     return position_z_dict
+
+
+def mix_transports_helper(volume=Unit("50:microliter"),
+                          speed=Unit("100:microliter/second"),
+                          repetitions=10):
+    mix_list = []
+    mix_list += [(
+        transport_builder(
+            mode_params=mode_params_builder(
+                tip_z=z_position_builder(
+                    reference="well_bottom",
+                    offset=Unit("0.5:mm")
+                )
+            )
+        )
+    )]
+    mix_vol = Unit(volume) / 2
+    mix_list += (
+        [
+            transport_builder(
+                volume=-mix_vol,
+                x_calibrated_volume=-mix_vol,
+                flowrate=flowrate_builder(speed),
+                mode_params=mode_params_builder(
+                    tip_z=z_position_builder(
+                        reference="preceding_position"
+                    )
+                )
+            ),
+            transport_builder(
+                volume=mix_vol,
+                x_calibrated_volume=mix_vol,
+                flowrate=flowrate_builder(speed),
+                mode_params=mode_params_builder(
+                    tip_z=z_position_builder(
+                        reference="preceding_position"
+                    )
+                )
+            )
+        ] * repetitions
+    )
+    return mix_list
 
 
 def old_aspirate_transports(volume, aspirate_speed=None, dispense_speed=None,
@@ -421,7 +428,7 @@ def aspirate_transports_helper(volume, aspirate_flowrate=None, pre_buffer=None,
         aspirate_tip_z = z_position_builder(reference="preceding_position")
 
     cal_asp_vol = -(calibrated_vol + primer_vol + disposal_vol) if \
-                  calibrated_vol else None
+        calibrated_vol else None
     aspirate_transport_list += [
         transport_builder(
             volume=-(volume + primer_vol + disposal_vol),
@@ -539,7 +546,8 @@ def old_dispense_transports(volume, aspirate_speed=None, dispense_speed=None,
     # Handle mix_kwargs by first removing non-applicable parameters
     if "mix_kwargs" in arg_dict:
         arg_dict.update(arg_dict.pop("mix_kwargs"))
-        [arg_dict.pop(mix_param, None) for mix_param in ["mix_before", "flowrate_b",
+        [arg_dict.pop(mix_param, None) for mix_param in ["mix_before",
+                                                         "flowrate_b",
                                                          "repetitions_b"]]
         # Overwrite appropriate parameters
         if "repetitions_a" in arg_dict:
@@ -765,6 +773,7 @@ def parse_old_parameters(volume, aspirate_speed=None, dispense_speed=None,
     if aspirate_source and dispense_target:
         raise ValueError("parse_old_parameters only supports either "
                          "aspirate_source or dispense_target")
+
     # Helpers for generating old defaults
     def old_pre_buffer(v):
         if v < Unit("10:uL"):
@@ -789,15 +798,16 @@ def parse_old_parameters(volume, aspirate_speed=None, dispense_speed=None,
             return (v / 5)
 
     # Helper for constructing z_position from depth
-    def depth_to_tip_z(depth):
+    def parse_depth(depth):
         z_pos_dict = {}
+        following = True
         _reference_map = {"ll_following": "liquid_surface",
                           "ll_top": "well_top",
                           "ll_bottom": "well_bottom",
                           "ll_surface": "liquid_surface"}
         _method_map = {"capacitive": "capacitance",
                        "pressure": "pressure"}
-        for k,v in depth.items():
+        for k, v in depth.items():
             if k == "method":
                 z_pos_dict["reference"] = _reference_map[v]
             if k == "method" and v == "ll_surface":
@@ -806,7 +816,7 @@ def parse_old_parameters(volume, aspirate_speed=None, dispense_speed=None,
                 z_pos_dict["offset"] = v
             if k in _method_map:
                 z_pos_dict["detection_method"] = _method_map[v]
-        return z_pos_dict
+        return following, z_pos_dict
 
     if pre_buffer:
         pre_buffer = Unit(pre_buffer)
@@ -843,14 +853,15 @@ def parse_old_parameters(volume, aspirate_speed=None, dispense_speed=None,
 
     # Intepret old `pipette_tools` builders
     if aspirate_source:
-        for k,v in aspirate_source.items():
+        for k, v in aspirate_source.items():
             if k == "aspirate_speed":
                 aspirate_flowrate = flowrate_builder(v["max"],
                                                      initial=v["start"])
             calibrated_vol = Unit(v) if k == "cal_volume" else None
             primer_vol = Unit(v) if k == "primer_vol" else None
             if k == "depth":
-                z_pos_dict.update(depth_to_tip_z(v))
+                following, tip_z = parse_depth(v)
+                z_pos_dict.update(tip_z)
             if k == "clld_sensitivity":
                 z_pos_dict["detection_threshold"] = clld_unit * v
             if k == "plld_threshold":
@@ -858,13 +869,14 @@ def parse_old_parameters(volume, aspirate_speed=None, dispense_speed=None,
                 z_pos_dict["detection_duration"] = v["duration"]
 
     if dispense_target:
-        for k,v in dispense_target.items():
+        for k, v in dispense_target.items():
             if k == "dispense_speed":
                 dispense_flowrate = flowrate_builder(v["max"],
                                                      initial=v["start"])
             calibrated_vol = Unit(v) if k == "cal_volume" else None
             if k == "depth":
-                z_pos_dict.update(depth_to_tip_z(v))
+                following, tip_z = parse_depth(v)
+                z_pos_dict.update(tip_z)
             if k == "clld_sensitivity":
                 z_pos_dict["detection_threshold"] = clld_unit * v
             if k == "plld_threshold":
@@ -892,4 +904,3 @@ def parse_old_parameters(volume, aspirate_speed=None, dispense_speed=None,
     # Handling mix kwargs
     pipette_args["mix_speed"] = pipette_args.pop("flowrate", None)
     return pipette_args
-

@@ -1,5 +1,5 @@
-from .liquid_handle_builders import location_builder, liquid_handle, \
-    old_aspirate_transports, old_dispense_transports, _MAX_SINGLE_TIP_CAPACITY
+from .liquid_handle_builders import location_builder, old_aspirate_transports,\
+    old_dispense_transports, _MAX_SINGLE_TIP_CAPACITY, mix_transports_helper
 from .container import Container, Well, WellGroup, SEAL_TYPES, COVER_TYPES
 from .container_type import ContainerType, _CONTAINER_TYPES
 from .unit import Unit, UnitError
@@ -673,6 +673,7 @@ class Protocol(object):
         """
         Distribute liquid from source well(s) to destination wells(s).
 
+        Note that this function now produces a `liquid_handle` instruction.
 
         Example Usage:
 
@@ -695,61 +696,6 @@ class Protocol(object):
                          mix_vol="500:microliter",
                          repetitions=20)
 
-        Autoprotocol Output:
-
-        .. code-block:: json
-
-            "instructions": [
-              {
-                "groups": [
-                  {
-                    "distribute": {
-                      "to": [
-                        {
-                          "volume": "150.0:microliter",
-                          "well": "sample_plate/0"
-                        },
-                        {
-                          "volume": "150.0:microliter",
-                          "well": "sample_plate/12"
-                        },
-                        {
-                          "volume": "150.0:microliter",
-                          "well": "sample_plate/24"
-                        },
-                        {
-                          "volume": "150.0:microliter",
-                          "well": "sample_plate/36"
-                        },
-                        {
-                          "volume": "150.0:microliter",
-                          "well": "sample_plate/48"
-                        },
-                        {
-                          "volume": "150.0:microliter",
-                          "well": "sample_plate/60"
-                        },
-                        {
-                          "volume": "150.0:microliter",
-                          "well": "sample_plate/72"
-                        },
-                        {
-                          "volume": "150.0:microliter",
-                          "well": "sample_plate/84"
-                        }
-                      ],
-                      "from": "sample_source/0",
-                      "mix_before": {
-                        "volume": "500:microliter",
-                        "repetitions": 20,
-                        "speed": "100:microliter/second"
-                      }
-                    }
-                  }
-                ],
-                "op": "pipette"
-              }
-            ]
 
         Parameters
         ----------
@@ -853,9 +799,15 @@ class Protocol(object):
                               "aspirate_source", "dispense_target",
                               "pre_buffer", "transit_vol", "blowout_buffer",
                               "tip_type"]
+            if "distribute_target" in arg_dict:
+                distribute_target = arg_dict["distribute_target"]
+                if "dispense_speed" in distribute_target:
+                    arg_dict["dispense_speed"] = distribute_target.pop(
+                        "dispense_speed")
+                arg_dict["dispense_target"] = distribute_target
+
             pipette_args = {param: arg_dict[param] for param in
-                            pipette_params
-                            if param in arg_dict}
+                            pipette_params if param in arg_dict}
 
             location_list = []
 
@@ -887,7 +839,7 @@ class Protocol(object):
 
         for d, v in list(zip(dests.wells, volume)):
             v = v.to("ul")
-            if src.volume < v:
+            if src.volume and src.volume < v:
                 # find a src well with enough volume
                 src = next(
                     (get_w(w, acc_vols) for w in sources.wells if
@@ -921,8 +873,7 @@ class Protocol(object):
             self._remove_cover(d.container, "distribute into")
             locations.append(location_helper(v, s=None, d=d))
 
-        self.instructions.append(
-            liquid_handle(locations, tip_type=tip_type))
+        self.append(LiquidHandle(locations, tip_type=tip_type))
 
     def transfer(self, source, dest, volume, one_source=False, one_tip=False,
                  aspirate_speed=None, dispense_speed=None,
@@ -933,6 +884,8 @@ class Protocol(object):
         Transfer liquid from one specific well to another.  A new pipette tip
         is used between each transfer step unless the "one_tip" parameter
         is set to True.
+
+        Note that this function now produces a `liquid_handle` instruction.
 
         Example Usage:
 
@@ -1211,8 +1164,7 @@ class Protocol(object):
                     v = _MAX_SINGLE_TIP_CAPACITY
                     locations += location_helper(s, d, v)
                     if not one_tip:
-                        self.instructions.append(
-                            liquid_handle(locations, tip_type=tip_type))
+                        self.append(LiquidHandle(locations, tip_type=tip_type))
                         locations = []
                     diff -= _MAX_SINGLE_TIP_CAPACITY
                 v = diff
@@ -1220,13 +1172,11 @@ class Protocol(object):
             if v > Unit("0:microliter"):
                 locations += location_helper(s, d, v)
             if not one_tip:
-                self.instructions.append(liquid_handle(locations,
-                                                       tip_type=tip_type))
+                self.append(LiquidHandle(locations, tip_type=tip_type))
                 locations = []
 
         if one_tip:
-            self.instructions.append(liquid_handle(locations,
-                                                   tip_type=tip_type))
+            self.append(LiquidHandle(locations, tip_type=tip_type))
 
     def consolidate(self, sources, dest, volumes, allow_carryover=False,
                     mix_after=False, mix_vol=None,
@@ -1246,6 +1196,8 @@ class Protocol(object):
         `allow_carryover` to allow the tip to carry on pipetting from the
         source wells after it has touched the target well, or break up your
         operation into multiple groups with separate tips.
+
+        Note that this function now produces a `liquid_handle` instruction.
 
         Parameters
         ----------
@@ -1374,7 +1326,7 @@ class Protocol(object):
             acc_vol += v
 
         locations.append(location_helper(acc_vol, s=None, d=dest))
-        self.instructions.append(liquid_handle(locations, tip_type=tip_type))
+        self.append(LiquidHandle(locations, tip_type=tip_type))
 
     def acoustic_transfer(self, source, dest, volume, one_source=False,
                           droplet_size="25:nanoliter"):
@@ -2650,6 +2602,8 @@ class Protocol(object):
         """
         Mix specified well using a new pipette tip
 
+        Note that this function now produces a `liquid_handle` instruction.
+
         Example Usage:
 
         .. code-block:: python
@@ -2663,29 +2617,6 @@ class Protocol(object):
             p.mix(sample_source.well(0), volume="200:microliter",
                   repetitions=25)
 
-        Autoprotocol Output:
-
-        .. code-block:: json
-
-            "instructions": [
-                {
-                  "groups": [
-                    {
-                      "mix": [
-                        {
-                          "volume": "200:microliter",
-                          "well": "sample_source/0",
-                          "repetitions": 25,
-                          "speed": "100:microliter/second"
-                        }
-                      ]
-                    }
-                  ],
-                  "op": "pipette"
-                }
-              ]
-            }
-
 
         Parameters
         ----------
@@ -2697,7 +2628,7 @@ class Protocol(object):
         speed : str, Unit, optional
             flowrate of liquid during mixing
         repetitions : int, optional
-            number of times to aspirate and expell liquid during mixing
+            number of times to aspirate and expel liquid during mixing
         one_tip : bool
             mix all wells with a single tip
 
@@ -2707,28 +2638,20 @@ class Protocol(object):
             raise TypeError("Mix well must be of type Well, list of Wells, or "
                             "WellGroup.")
         well = WellGroup(well)
+
+        locations = []
+        for w in well.wells:
+            self._remove_cover(w.container, "mix")
+            locations += location_builder(
+                location=w,
+                transports=mix_transports_helper(volume, speed, repetitions)
+            )
+            if not one_tip:
+                self.append(LiquidHandle(locations))
+                locations = []
+
         if one_tip:
-            group = []
-            for w in well.wells:
-                self._remove_cover(w.container, "mix")
-                opts = {
-                    "well": w,
-                    "volume": volume,
-                    "speed": speed,
-                    "repetitions": repetitions
-                }
-                group.append(opts)
-            self._pipette([{"mix": group}])
-        else:
-            for w in well.wells:
-                self._remove_cover(w.container, "mix")
-                opts = {
-                    "well": w,
-                    "volume": volume,
-                    "speed": speed,
-                    "repetitions": repetitions
-                }
-                self._pipette([{"mix": [opts]}])
+            self.append(LiquidHandle(locations))
 
     def dispense(self, ref, reagent, columns, speed_percentage=None, is_resource_id=False):
         """
