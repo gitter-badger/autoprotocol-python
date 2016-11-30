@@ -1550,18 +1550,21 @@ class Protocol(object):
                 return
         self.append(AcousticTransfer(transfers, droplet_size))
 
-    def stamp(self, source_origin, dest_origin, volume, shape=dict(rows=8,
-                                                                   columns=12), mix_before=False, mix_after=False, mix_vol=None,
+    def stamp(self, source_origin, dest_origin, volume,
+              shape=dict(rows=8, columns=12),
+              mix_before=False, mix_after=False, mix_vol=None,
               repetitions=10, flowrate="100:microliter/second",
               aspirate_speed=None, dispense_speed=None, aspirate_source=None,
               dispense_target=None, pre_buffer=None, disposal_vol=None,
               transit_vol=None, blowout_buffer=None, one_source=False,
-              one_tip=False, new_group=False):
+              one_tip=False, new_group=False, shape_format="SBS96"):
         """
         **Note: the way this method now works is significantly different to the
         way it has in previous versions, please make sure to read the
         documentation below and adjust existing scripts utilizing stamp()
         accordingly**
+
+        Note that this function now produces a `liquid_handle` instruction.
 
         A stamp instruction consists of a list of groups of transfers, each of
         which specifies from and to well references (ref/well_index)
@@ -1694,95 +1697,48 @@ class Protocol(object):
             Specify whether all transfer steps will use the same tip or not.
             If multiple different shapes are used, one_tip cannot be true.
         new_group : bool, optional
-
-            Example
-
-            .. code-block:: python
-
-                p.stamp(plate_1_96.well("A1"), plate_2_96.well("A1"),
-                "10:microliter")
-                p.stamp(plate_1_96.well("A1"), plate_2_96.well("A1"),
-                "10:microliter")
-
-            Autoprotocol Output:
-
-            .. code-block:: json
-
-                "instructions": [
-                    {
-                      "groups": [
-                        {
-                          "transfer": [
-                            {
-                              "volume": "10.0:microliter",
-                              "to": "plate_2_96/0",
-                              "from": "plate_1_96/0"
-                            }
-                          ],
-                          "shape": {
-                            "rows": 8,
-                            "columns": 12
-                          },
-                          "tip_layout": 96
-                        }
-                      ],
-                      "op": "stamp"
-                    },
-                    {
-                      "groups": [
-                        {
-                          "transfer": [
-                            {
-                              "volume": "10.0:microliter",
-                              "to": "plate_2_96/0",
-                              "from": "plate_1_96/0"
-                            }
-                          ],
-                          "shape": {
-                            "rows": 8,
-                            "columns": 12
-                          },
-                          "tip_layout": 96
-                        }
-                      ],
-                      "op": "stamp"
-                    }
-                  ]
+            Grouping is now done automatically, so there's no need to specify
+            this parameter. In order to force groupings, please ensure that
+            the location you would like to transfer to is included in the
+            instruction.
+        shape_format: str
+            Specifies the format of the shape that will be used for the stamp.
+            Choose between "SBS96" and "SBS384"
 
         """
+        _SUPPORTED_SHAPES = ["SBS96", "SBS384"]
+        if shape_format not in _SUPPORTED_SHAPES:
+            raise TypeError("Invalid shape given. Shape has to be in {}".format(
+                _SUPPORTED_SHAPES))
 
-        # Support existing transfer syntax by converting a container to all
-        # quadrants of that container
-        if isinstance(source_origin, Container):
-            source_plate = source_origin
-            source_plate_type = source_plate.container_type
-            if source_plate_type.well_count == 96:
-                source_origin = source_plate.well(0)
-            elif source_plate_type.well_count == 384:
-                source_origin = source_plate.wells([0, 1, 24, 25])
-            else:
-                raise TypeError("Invalid source_origin type given. If "
-                                "source_origin is a container, it must be a "
-                                "container with 96 or 384 wells.")
-        if isinstance(dest_origin, Container):
-            dest_plate = dest_origin
-            dest_plate_type = dest_plate.container_type
-            if dest_plate_type.well_count == 96:
-                dest_origin = dest_plate.well(0)
-            elif dest_plate_type.well_count == 384:
-                dest_origin = dest_plate.wells([0, 1, 24, 25])
-            else:
-                raise TypeError("Invalid dest_origin type given. If "
-                                "dest_origin is a container, it must be a "
-                                "container with 96 or 384 wells.")
+        def get_valid_origin(origin):
+            # Support existing transfer syntax by converting a container to all
+            # quadrants of that container
+            if isinstance(origin, Container):
+                origin_plate = origin
+                origin_plate_type = origin_plate.container_type
+                if origin_plate_type.well_count == 96:
+                    if shape_format == "SBS384":
+                        raise TypeError("Cannot stamp into 96-well plate with "
+                                        "SBS384 formatted head shape")
+                    origin = origin_plate.well(0)
+                elif origin_plate_type.well_count == 384:
+                    if shape_format == "SBS96":
+                        origin = origin_plate.wells([0, 1, 24, 25])
+                    elif shape_format == "SBS384":
+                        origin = origin_plate.well(0)
+                else:
+                    raise TypeError("Invalid origin type given. If "
+                                    "source or dest_origin is a container, it "
+                                    "must be a container with 96 or 384 wells.")
+            # Check valid well inputs
+            if not is_valid_well(origin):
+                raise TypeError("source and dest_origin must be of type Well"
+                                ", list of Wells, or WellGroup.")
+            return origin
 
-        # Check valid well inputs
-        if not is_valid_well(source_origin):
-            raise TypeError("Source (source_origin) must be of type Well, "
-                            "list of Wells, or WellGroup.")
-        if not is_valid_well(dest_origin):
-            raise TypeError("Destination (dest_origin) must be of type Well, "
-                            "list of Wells, or WellGroup.")
+        source_origin = get_valid_origin(source_origin)
+        dest_origin = get_valid_origin(dest_origin)
 
         # Initialize input parameters
         source = WellGroup(source_origin)
@@ -1841,10 +1797,9 @@ class Protocol(object):
                                "transfers, each destination well must have a "
                                "corresponding shape in the form of a list.")
 
-        # Read through shape list and generate stamp_type, rows, and columns
+        # Read through shape list and parse into shape_builder
         stamp_type = []
-        rows = []
-        columns = []
+        shape_formats = []
 
         for s in shape:
             # Check and load rows/columns from given shape
@@ -1853,34 +1808,50 @@ class Protocol(object):
                                 "of a rectangle has to be defined.")
             r = s["rows"]
             c = s["columns"]
-            rows.append(r)
-            columns.append(c)
+            shape_formats.append(shape_builder(r, c, format=shape_format))
 
             # Check on complete rows/columns (assumption: tip_layout=96)
-            if c == 12 and r == 8:
-                stamp_type.append("full")
-            elif c == 12:
-                stamp_type.append("row")
-            elif r == 8:
-                stamp_type.append("col")
-            else:
-                raise ValueError("Only complete rows or columns are allowed.")
+            if shape_format == "SBS96":
+                if c == 12 and r == 8:
+                    stamp_type.append("full")
+                elif c == 12:
+                    stamp_type.append("row")
+                elif r == 8:
+                    stamp_type.append("col")
+                else:
+                    raise ValueError("Only complete rows or columns are "
+                                     "allowed.")
+            elif shape_format == "SBS384":
+                if c == 24 and r == 16:
+                    stamp_type.append("full")
+                elif c == 24:
+                    stamp_type.append("row")
+                elif r == 16:
+                    stamp_type.append("col")
+                else:
+                    raise ValueError("Only complete rows or columns are "
+                                     "allowed.")
 
         # Check dimensions of shape and ensure that origins are valid
-        for s, d, c, r, st in list(zip(source.wells, dest.wells, columns, rows, stamp_type)):
+        for s, d, sf, st in list(zip(source.wells, dest.wells, shape_formats,
+                                     stamp_type)):
+            r = sf["rows"]
+            c = sf["columns"]
             src_col_count = s.container.container_type.col_count
             dest_col_count = d.container.container_type.col_count
             if c < 0 or c > src_col_count or c > dest_col_count:
                 raise ValueError("Columns given exceed plate dimensions.")
 
-            src_row_count = s.container.container_type.well_count // src_col_count
-            dest_row_count = d.container.container_type.well_count // dest_col_count
+            src_row_count = (s.container.container_type.well_count //
+                             src_col_count)
+            dest_row_count = (d.container.container_type.well_count //
+                              dest_col_count)
             if r < 0 or r > src_row_count or r > dest_row_count:
                 raise ValueError("Rows given exceed plate dimensions.")
 
             # Check if origins are valid
-            check_valid_origin(s, st, c, r)
-            check_valid_origin(d, st, c, r)
+            check_valid_origin(s, st, c, r, sf["format"])
+            check_valid_origin(d, st, c, r, sf["format"])
 
         # Check if shapes are the same given one_tip or one_source = True
         if one_tip or one_source:
@@ -1888,25 +1859,38 @@ class Protocol(object):
                 raise RuntimeError("The same shape must be used if one_tip or "
                                    "one_source is true.")
 
+        def get_wells(origin, s_type, s_format="SBS96"):
+            # Generates wells based on the stamp type, container type and format
+            column_wise = False
+            if s_type == "col":
+                column_wise = True
+            if (s_format == "SBS96" and
+                    origin.container.container_type.col_count == 24):
+                if column_wise:
+                    origin_wells = [origin.container.wells_from(
+                        origin, c * r * 4, column_wise)[x] for
+                                    x in range(c * r * 4) if
+                                    (x % 2) == (x // 16) % 2 == 0]
+                else:
+                    origin_wells = [origin.container.wells_from(
+                        origin, c * r * 4, column_wise)[x] for
+                                    x in range(c * r * 4) if
+                                    (x % 2) == (x // 24) % 2 == 0]
+            else:
+                origin_wells = origin.container.wells_from(
+                    origin, c * r, column_wise)
+            return origin_wells
+
         # Create source, destination, and volumes list for one_source=True
         if one_source:
             try:
                 # Check if all wells in shape have same or greater volume given
                 # one_source = True
-                for w, c, r, st in list(zip(source.wells, columns, rows, stamp_type)):
-                    columnWise = False
-                    if st == "col":
-                        columnWise = True
-                    if w.container.container_type.col_count == 24:
-                        if columnWise:
-                            source_wells = [w.container.wells_from(
-                                w, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 16) % 2 == 0]
-                        else:
-                            source_wells = [w.container.wells_from(
-                                w, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 24) % 2 == 0]
-                    else:
-                        source_wells = w.container.wells_from(
-                            w, c * r, columnWise)
+                for w, sf, st in list(zip(source.wells, shape_formats,
+                                          stamp_type)):
+                    r = sf["rows"]
+                    c = sf["columns"]
+                    source_wells = get_wells(w, st, sf["format"])
                     if not all([s.volume >= w.volume for s in source_wells]):
                         raise RuntimeError("Each well in a shape must have "
                                            "the same or greater volume as the "
@@ -1918,7 +1902,8 @@ class Protocol(object):
                     raise RuntimeError("There is not enough volume in the "
                                        "source well(s) specified to complete "
                                        "the transfers.")
-                if len_source >= len_dest and all(i > j for i, j in zip(source_vol, volume)):
+                if (len_source >= len_dest and
+                        all(i > j for i, j in zip(source_vol, volume))):
                     sources = source.wells[:len_dest]
                     destinations = dest.wells
                     volumes = volume
@@ -1958,8 +1943,7 @@ class Protocol(object):
                 dest = WellGroup(destinations)
                 volume = volumes
                 shape = [shape[0]] * len(volume)
-                rows = [rows[0]] * len(volume)
-                columns = [columns[0]] * len(volume)
+                shape_formats = [shape_formats[0]] * len(volume)
                 stamp_type = [stamp_type[0]] * len(volume)
             except (ValueError, AttributeError, TypeError):
                 raise RuntimeError("When transferring liquid from multiple "
@@ -1970,9 +1954,14 @@ class Protocol(object):
 
         # Checking on containers and volume consistency if one_tip = True
 
-        # Set volume at which tip volume type changes defined by TCLE - hardcoded for the two current tip volume types
+        # Set volume at which tip volume type changes defined by TCLE -
+        # hardcoded for the two current tip volume types
         # TODO remove this when consolidating to 165ul filtered tips
-        volumeSwitch = Unit.fromstring("31:microliter")
+        if shape_format == "SBS96":
+            volume_switch = Unit.fromstring("31:microliter")
+        elif shape_format == "SBS384":
+            # TODO: Replace below when this is calibrated
+            volume_switch = Unit.fromstring("10:microliter")
 
         if one_tip:
             # Volume consistency
@@ -1980,7 +1969,9 @@ class Protocol(object):
                 temp_vol = Unit.fromstring("0:microliter")
             else:
                 temp_vol = Unit.fromstring(mix_vol)
-            if not (all([v > volumeSwitch for v in volume]) or all([v <= volumeSwitch for v in volume]) or (temp_vol > volumeSwitch)):
+            if not (all([v > volume_switch for v in volume]) or
+                    all([v <= volume_switch for v in volume]) or
+                    (temp_vol > volume_switch)):
                 raise RuntimeError("Volumes must all be > or <= 31:microliter "
                                    "for one_tip = True. If one_source = True, "
                                    "it may be generating volumes which are "
@@ -1989,22 +1980,30 @@ class Protocol(object):
             # Container consistency
             st = stamp_type[0]
             if st == "full":
-                maxContainers = 3
+                max_containers = 3
             else:
-                maxContainers = 2
+                max_containers = 2
 
             all_wells = source + dest
 
-            if len(set(map(lambda x: x.container, all_wells.wells))) > maxContainers:
+            if (len(set(map(lambda x: x.container, all_wells.wells))) >
+                    max_containers):
                 raise RuntimeError("Exceeded maximum allowed containers when "
                                    "using one_tip = True")
 
         # Calculate max_tip_vol smartly based on residual volumes
         # tip_capacity determined with calibration parameters
-        tip_capacity = Unit.fromstring("158:microliter")
-        primer_resid = Unit.fromstring("5:microliter")
-        transit_resid = Unit.fromstring("1:microliter")
-        pre_buffer_resid = Unit.fromstring("5:microliter")
+        if shape_format == "SBS96":
+            tip_capacity = Unit.fromstring("158:microliter")
+            primer_resid = Unit.fromstring("5:microliter")
+            transit_resid = Unit.fromstring("1:microliter")
+            pre_buffer_resid = Unit.fromstring("5:microliter")
+        elif shape_format == "SBS384":
+            # TODO: Replace below when this is calibrated
+            tip_capacity = Unit.fromstring("20:microliter")
+            primer_resid = Unit.fromstring("5:microliter")
+            transit_resid = Unit.fromstring("1:microliter")
+            pre_buffer_resid = Unit.fromstring("5:microliter")
 
         if aspirate_source:
             if 'primer_vol' in aspirate_source.keys():
@@ -2021,13 +2020,14 @@ class Protocol(object):
 
         max_tip_vol = tip_capacity - pre_buffer_resid - primer_or_transit
 
-        for s, d, v, c, r, st, sh in list(zip(source.wells, dest.wells, volume, columns, rows, stamp_type, shape)):
-
+        for s, d, v, sf, st, sh in list(zip(source.wells, dest.wells, volume,
+                                            shape_formats, stamp_type, shape)):
+            c = sf["columns"]
+            r = sf["rows"]
             # Splitting volumes up if greater than max_tip_vol
             if v > max_tip_vol:
                 diff = v
                 while diff > max_tip_vol:
-
                     # Logic for splitting volume in half once less than
                     # 2*max_tip_volum
                     if diff < max_tip_vol * 2:
@@ -2041,29 +2041,8 @@ class Protocol(object):
                         }
 
                         # Volume accounting
-                        columnWise = False
-                        if st == "col":
-                            columnWise = True
-                        if d.container.container_type.col_count == 24:
-                            if columnWise:
-                                dest_wells = [d.container.wells_from(
-                                    d, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 16) % 2 == 0]
-                            else:
-                                dest_wells = [d.container.wells_from(
-                                    d, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 24) % 2 == 0]
-                        else:
-                            dest_wells = d.container.wells_from(
-                                d, c * r, columnWise)
-                        if s.container.container_type.col_count == 24:
-                            if columnWise:
-                                source_wells = [s.container.wells_from(
-                                    s, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 16) % 2 == 0]
-                            else:
-                                source_wells = [s.container.wells_from(
-                                    s, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 24) % 2 == 0]
-                        else:
-                            source_wells = s.container.wells_from(
-                                s, c * r, columnWise)
+                        dest_wells = get_wells(d, st, sf["format"])
+                        source_wells = get_wells(s, st, sf["format"])
                         for well in source_wells:
                             if well.volume:
                                 well.volume -= v
@@ -2114,29 +2093,8 @@ class Protocol(object):
                         }
 
                         # Volume accounting
-                        columnWise = False
-                        if st == "col":
-                            columnWise = True
-                        if d.container.container_type.col_count == 24:
-                            if columnWise:
-                                dest_wells = [d.container.wells_from(
-                                    d, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 16) % 2 == 0]
-                            else:
-                                dest_wells = [d.container.wells_from(
-                                    d, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 24) % 2 == 0]
-                        else:
-                            dest_wells = d.container.wells_from(
-                                d, c * r, columnWise)
-                        if s.container.container_type.col_count == 24:
-                            if columnWise:
-                                source_wells = [s.container.wells_from(
-                                    s, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 16) % 2 == 0]
-                            else:
-                                source_wells = [s.container.wells_from(
-                                    s, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 24) % 2 == 0]
-                        else:
-                            source_wells = s.container.wells_from(
-                                s, c * r, columnWise)
+                        dest_wells = get_wells(d, st, sf["format"])
+                        source_wells = get_wells(s, st, sf["format"])
                         for well in source_wells:
                             if well.volume:
                                 well.volume -= v
@@ -2151,8 +2109,8 @@ class Protocol(object):
                         for option in opt_list:
                             assign(xfer, option, eval(option))
                         x_opt_list = ["x_aspirate_source", "x_dispense_target",
-                                      "x_pre_buffer", "x_disposal_vol", "x_transit_vol",
-                                      "x_blowout_buffer"]
+                                      "x_pre_buffer", "x_disposal_vol",
+                                      "x_transit_vol", "x_blowout_buffer"]
                         for x_option in x_opt_list:
                             assign(xfer, x_option, eval(x_option[2:]))
                         if not mix_vol and (mix_before or mix_after):
@@ -2184,27 +2142,8 @@ class Protocol(object):
             }
 
             # Volume accounting
-            columnWise = False
-            if st == "col":
-                columnWise = True
-            if d.container.container_type.col_count == 24:
-                if columnWise:
-                    dest_wells = [d.container.wells_from(
-                        d, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 16) % 2 == 0]
-                else:
-                    dest_wells = [d.container.wells_from(
-                        d, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 24) % 2 == 0]
-            else:
-                dest_wells = d.container.wells_from(d, c * r, columnWise)
-            if s.container.container_type.col_count == 24:
-                if columnWise:
-                    source_wells = [s.container.wells_from(
-                        s, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 16) % 2 == 0]
-                else:
-                    source_wells = [s.container.wells_from(
-                        s, c * r * 4, columnWise)[x] for x in range(c * r * 4) if (x % 2) == (x // 24) % 2 == 0]
-            else:
-                source_wells = s.container.wells_from(s, c * r, columnWise)
+            dest_wells = get_wells(d, st, sf["format"])
+            source_wells = get_wells(s, st, sf["format"])
             for well in source_wells:
                 if well.volume:
                     well.volume -= v
@@ -2253,16 +2192,16 @@ class Protocol(object):
 
             if stamp_type == "full":
                 maxTransfers = 4
-                maxContainers = 3
+                max_containers = 3
             elif stamp_type == "col":
                 maxTransfers = 12
-                maxContainers = 2
+                max_containers = 2
             else:
                 maxTransfers = 8
-                maxContainers = 2
+                max_containers = 2
             if new_group:
                 self.instructions.append(Stamp([trans]))
-            elif (len(self.instructions) > 0 and self.instructions[-1].op == "stamp" and check_stamp_append(trans, self.instructions[-1].groups, maxTransfers, maxContainers, volumeSwitch)):
+            elif (len(self.instructions) > 0 and self.instructions[-1].op == "stamp" and check_stamp_append(trans, self.instructions[-1].groups, maxTransfers, max_containers, volume_switch)):
                 # Append to existing instruction
                 self.instructions[-1].groups.append(trans)
             else:
@@ -2279,16 +2218,16 @@ class Protocol(object):
 
                 if stamp_type == "full":
                     maxTransfers = 4
-                    maxContainers = 3
+                    max_containers = 3
                 elif stamp_type == "col":
                     maxTransfers = 12
-                    maxContainers = 2
+                    max_containers = 2
                 else:
                     maxTransfers = 8
-                    maxContainers = 2
+                    max_containers = 2
                 if new_group:
                     self.instructions.append(Stamp([trans]))
-                elif (len(self.instructions) > 0 and self.instructions[-1].op == "stamp" and check_stamp_append(trans, self.instructions[-1].groups, maxTransfers, maxContainers, volumeSwitch)):
+                elif (len(self.instructions) > 0 and self.instructions[-1].op == "stamp" and check_stamp_append(trans, self.instructions[-1].groups, maxTransfers, max_containers, volume_switch)):
                     # Append to existing instruction
                     self.instructions[-1].groups.append(trans)
                 else:
