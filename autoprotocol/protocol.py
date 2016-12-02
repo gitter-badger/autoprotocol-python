@@ -1,5 +1,6 @@
-from .liquid_handle_builders import location_builder, old_aspirate_transports,\
-    old_dispense_transports, _MAX_SINGLE_TIP_CAPACITY, mix_transports_helper
+from .liquid_handle_builders import location_builder, old_xfer_asp_transports,\
+    old_xfer_dsp_transports, _MAX_SINGLE_TIP_CAPACITY, mix_transports_helper, \
+    old_stamp_asp_transports, old_stamp_dsp_transports
 from .container import Container, Well, WellGroup, SEAL_TYPES, COVER_TYPES
 from .container_type import ContainerType, _CONTAINER_TYPES
 from .unit import Unit, UnitError
@@ -812,12 +813,12 @@ class Protocol(object):
             location_list = []
 
             if s:
-                aspirate_list = old_aspirate_transports(v,
+                aspirate_list = old_xfer_asp_transports(v,
                                                         **pipette_args)
                 location_list.append(location_builder(location=s,
                                                       transports=aspirate_list))
             if d:
-                dispense_list = old_dispense_transports(v,
+                dispense_list = old_xfer_dsp_transports(v,
                                                         **pipette_args)
                 location_list.append(location_builder(location=d,
                                                       transports=dispense_list))
@@ -1144,8 +1145,8 @@ class Protocol(object):
                             if param in arg_dict}
             pipette_args.update(mix_kwargs)
 
-            aspirate_list = old_aspirate_transports(xfer_vol, **pipette_args)
-            dispense_list = old_dispense_transports(xfer_vol, **pipette_args)
+            aspirate_list = old_xfer_asp_transports(xfer_vol, **pipette_args)
+            dispense_list = old_xfer_dsp_transports(xfer_vol, **pipette_args)
 
             location_list.append(location_builder(location=src_well,
                                                   transports=aspirate_list))
@@ -1171,9 +1172,9 @@ class Protocol(object):
             # Ignore 0 volume transfers <- copied from old behavior
             if v > Unit("0:microliter"):
                 locations += location_helper(s, d, v)
-            if not one_tip:
-                self.append(LiquidHandle(locations, tip_type=tip_type))
-                locations = []
+                if not one_tip:
+                    self.append(LiquidHandle(locations, tip_type=tip_type))
+                    locations = []
 
         if one_tip:
             self.append(LiquidHandle(locations, tip_type=tip_type))
@@ -1290,13 +1291,13 @@ class Protocol(object):
             location_list = []
 
             if s:
-                aspirate_list = old_aspirate_transports(volume, **pipette_args)
+                aspirate_list = old_xfer_asp_transports(volume, **pipette_args)
                 location_list.append(location_builder(location=s,
                                                       transports=aspirate_list))
                 if s.volume:
                     s.volume -= volume
             if d:
-                dispense_list = old_dispense_transports(volume, **pipette_args)
+                dispense_list = old_xfer_dsp_transports(volume, **pipette_args)
                 location_list.append(location_builder(location=d,
                                                       transports=dispense_list))
                 if d.volume:
@@ -1557,7 +1558,8 @@ class Protocol(object):
               aspirate_speed=None, dispense_speed=None, aspirate_source=None,
               dispense_target=None, pre_buffer=None, disposal_vol=None,
               transit_vol=None, blowout_buffer=None, one_source=False,
-              one_tip=False, new_group=False, shape_format="SBS96"):
+              one_tip=False, new_group=False,
+              shape_format="SBS96", tip_type=None):
         """
         **Note: the way this method now works is significantly different to the
         way it has in previous versions, please make sure to read the
@@ -1706,6 +1708,9 @@ class Protocol(object):
             Choose between "SBS96" and "SBS384"
 
         """
+        arg_list = list(locals().items())
+        arg_dict = {k: v for k, v in arg_list if v is not None}
+
         _SUPPORTED_SHAPES = ["SBS96", "SBS384"]
         if shape_format not in _SUPPORTED_SHAPES:
             raise TypeError("Invalid shape given. Shape has to be in {}".format(
@@ -1743,9 +1748,6 @@ class Protocol(object):
         # Initialize input parameters
         source = WellGroup(source_origin)
         dest = WellGroup(dest_origin)
-        opts = []  # list of transfers
-        oshp = []  # list of shapes
-        osta = []  # list of stamp_types
         len_source = len(source.wells)
         len_dest = len(dest.wells)
 
@@ -1798,7 +1800,7 @@ class Protocol(object):
                                "corresponding shape in the form of a list.")
 
         # Read through shape list and parse into shape_builder
-        stamp_type = []
+        stamp_types = []
         shape_formats = []
 
         for s in shape:
@@ -1813,28 +1815,28 @@ class Protocol(object):
             # Check on complete rows/columns (assumption: tip_layout=96)
             if shape_format == "SBS96":
                 if c == 12 and r == 8:
-                    stamp_type.append("full")
+                    stamp_types.append("full")
                 elif c == 12:
-                    stamp_type.append("row")
+                    stamp_types.append("row")
                 elif r == 8:
-                    stamp_type.append("col")
+                    stamp_types.append("col")
                 else:
                     raise ValueError("Only complete rows or columns are "
                                      "allowed.")
             elif shape_format == "SBS384":
                 if c == 24 and r == 16:
-                    stamp_type.append("full")
+                    stamp_types.append("full")
                 elif c == 24:
-                    stamp_type.append("row")
+                    stamp_types.append("row")
                 elif r == 16:
-                    stamp_type.append("col")
+                    stamp_types.append("col")
                 else:
                     raise ValueError("Only complete rows or columns are "
                                      "allowed.")
 
         # Check dimensions of shape and ensure that origins are valid
         for s, d, sf, st in list(zip(source.wells, dest.wells, shape_formats,
-                                     stamp_type)):
+                                     stamp_types)):
             r = sf["rows"]
             c = sf["columns"]
             src_col_count = s.container.container_type.col_count
@@ -1887,7 +1889,7 @@ class Protocol(object):
                 # Check if all wells in shape have same or greater volume given
                 # one_source = True
                 for w, sf, st in list(zip(source.wells, shape_formats,
-                                          stamp_type)):
+                                          stamp_types)):
                     r = sf["rows"]
                     c = sf["columns"]
                     source_wells = get_wells(w, st, sf["format"])
@@ -1944,7 +1946,7 @@ class Protocol(object):
                 volume = volumes
                 shape = [shape[0]] * len(volume)
                 shape_formats = [shape_formats[0]] * len(volume)
-                stamp_type = [stamp_type[0]] * len(volume)
+                stamp_types = [stamp_types[0]] * len(volume)
             except (ValueError, AttributeError, TypeError):
                 raise RuntimeError("When transferring liquid from multiple "
                                    "wells containing the same substance to "
@@ -1978,7 +1980,7 @@ class Protocol(object):
                                    "incompatible.")
 
             # Container consistency
-            st = stamp_type[0]
+            st = stamp_types[0]
             if st == "full":
                 max_containers = 3
             else:
@@ -2020,25 +2022,67 @@ class Protocol(object):
 
         max_tip_vol = tip_capacity - pre_buffer_resid - primer_or_transit
 
+        def location_helper(src_well, dest_well, xfer_vol):
+            location_list = []
+            stamp_params = ["aspirate_speed", "dispense_speed",
+                            "aspirate_source", "dispense_target",
+                            "pre_buffer", "disposal_vol", "transit_vol",
+                            "blowout_buffer", "mix_before", "mix_after",
+                            "mix_vol", "repetitions", "flowrate"]
+            stamp_args = {param: arg_dict[param] for param in stamp_params
+                          if param in arg_dict}
+
+            aspirate_list = old_stamp_asp_transports(xfer_vol, **stamp_args)
+            dispense_list = old_stamp_dsp_transports(xfer_vol, **stamp_args)
+
+            location_list.append(location_builder(location=src_well,
+                                                  transports=aspirate_list))
+            location_list.append(location_builder(location=dest_well,
+                                                  transports=dispense_list))
+
+            return location_list
+
+        locations = []
+        prev_stamp_type = None
+        containers_used = set()
+
+        def isNewInstruction(prev_st, curr_st, cont_used):
+            c_copy = cont_used.copy()
+            c_copy.update([s, d])
+            if curr_st == "full":
+                max_cont = 3
+            elif curr_st == "col":
+                max_cont = 2
+            else:
+                max_cont = 2
+
+            # Create new instruction if different stamp_type
+            if prev_st and curr_st != prev_st:
+                return True
+            # Create new instruction if greater than max containers
+            elif len(c_copy) > max_cont:
+                return True
+            # Use existing instruction if one_tip=True and all other checks pass
+            elif one_tip:
+                return False
+            # Else always create new liquid_handle instruction
+            else:
+                return True
+
         for s, d, v, sf, st, sh in list(zip(source.wells, dest.wells, volume,
-                                            shape_formats, stamp_type, shape)):
+                                            shape_formats, stamp_types, shape)):
             c = sf["columns"]
             r = sf["rows"]
+
             # Splitting volumes up if greater than max_tip_vol
             if v > max_tip_vol:
                 diff = v
                 while diff > max_tip_vol:
                     # Logic for splitting volume in half once less than
-                    # 2*max_tip_volum
+                    # 2*max_tip_volume
                     if diff < max_tip_vol * 2:
                         diff = diff / 2
                         v = diff
-
-                        xfer = {
-                            "from": s,
-                            "to": d,
-                            "volume": v
-                        }
 
                         # Volume accounting
                         dest_wells = get_wells(d, st, sf["format"])
@@ -2052,33 +2096,16 @@ class Protocol(object):
                             else:
                                 well.volume = v
 
-                        # Adding liquid transfer options
-                        opt_list = ["aspirate_speed", "dispense_speed"]
-                        for option in opt_list:
-                            assign(xfer, option, eval(option))
-                        x_opt_list = ["x_aspirate_source", "x_dispense_target",
-                                      "x_pre_buffer", "x_disposal_vol", "x_transit_vol",
-                                      "x_blowout_buffer"]
-                        for x_option in x_opt_list:
-                            assign(xfer, x_option, eval(x_option[2:]))
-                        if not mix_vol and (mix_before or mix_after):
-                            mix_vol = v * .5
-                        if mix_before:
-                            xfer["mix_before"] = {
-                                "volume": mix_vol,
-                                "repetitions": repetitions,
-                                "speed": flowrate
-                            }
-                        if mix_after:
-                            xfer["mix_after"] = {
-                                "volume": mix_vol,
-                                "repetitions": repetitions,
-                                "speed": flowrate
-                            }
                         if v > Unit(0, 'microliter'):
-                            opts.append(xfer)
-                            oshp.append(sh)
-                            osta.append(st)
+                            if isNewInstruction(prev_stamp_type, st,
+                                                containers_used):
+                                self.append(LiquidHandle(locations,
+                                                         tip_type=tip_type,
+                                                         shape=sh))
+                                locations = location_helper(s, d, v)
+                                containers_used.clear()
+                            prev_stamp_type = st
+                            containers_used.update([s, d])
 
                     # Logic for splitting out max_tip_vol if volume greater
                     # than max_tip_vol
@@ -2086,12 +2113,6 @@ class Protocol(object):
                         diff -= max_tip_vol
                         v = max_tip_vol
 
-                        xfer = {
-                            "from": s,
-                            "to": d,
-                            "volume": v
-                        }
-
                         # Volume accounting
                         dest_wells = get_wells(d, st, sf["format"])
                         source_wells = get_wells(s, st, sf["format"])
@@ -2104,42 +2125,20 @@ class Protocol(object):
                             else:
                                 well.volume = v
 
-                        # Adding liquid transfer options
-                        opt_list = ["aspirate_speed", "dispense_speed"]
-                        for option in opt_list:
-                            assign(xfer, option, eval(option))
-                        x_opt_list = ["x_aspirate_source", "x_dispense_target",
-                                      "x_pre_buffer", "x_disposal_vol",
-                                      "x_transit_vol", "x_blowout_buffer"]
-                        for x_option in x_opt_list:
-                            assign(xfer, x_option, eval(x_option[2:]))
-                        if not mix_vol and (mix_before or mix_after):
-                            mix_vol = v * .5
-                        if mix_before:
-                            xfer["mix_before"] = {
-                                "volume": mix_vol,
-                                "repetitions": repetitions,
-                                "speed": flowrate
-                            }
-                        if mix_after:
-                            xfer["mix_after"] = {
-                                "volume": mix_vol,
-                                "repetitions": repetitions,
-                                "speed": flowrate
-                            }
                         if v > Unit(0, 'microliter'):
-                            opts.append(xfer)
-                            oshp.append(sh)
-                            osta.append(st)
+                            if isNewInstruction(prev_stamp_type, st,
+                                                containers_used):
+                                self.append(LiquidHandle(locations,
+                                                         tip_type=tip_type,
+                                                         shape=sh))
+                                locations = location_helper(s, d, v)
+                                containers_used.clear()
+                            prev_stamp_type = st
+                            containers_used.update([s, d])
                 v = diff
 
             self._remove_cover(s.container, "stamp")
             self._remove_cover(d.container, "stamp")
-            xfer = {
-                "from": s,
-                "to": d,
-                "volume": v
-            }
 
             # Volume accounting
             dest_wells = get_wells(d, st, sf["format"])
@@ -2153,88 +2152,23 @@ class Protocol(object):
                 else:
                     well.volume = v
 
-            # Adding liquid transfer options
-            opt_list = ["aspirate_speed", "dispense_speed"]
-            for option in opt_list:
-                assign(xfer, option, eval(option))
-            x_opt_list = ["x_aspirate_source", "x_dispense_target",
-                          "x_pre_buffer", "x_disposal_vol", "x_transit_vol",
-                          "x_blowout_buffer"]
-            for x_option in x_opt_list:
-                assign(xfer, x_option, eval(x_option[2:]))
-            if not mix_vol and (mix_before or mix_after):
-                mix_vol = v * .5
-            if mix_before:
-                xfer["mix_before"] = {
-                    "volume": mix_vol,
-                    "repetitions": repetitions,
-                    "speed": flowrate
-                }
-            if mix_after:
-                xfer["mix_after"] = {
-                    "volume": mix_vol,
-                    "repetitions": repetitions,
-                    "speed": flowrate
-                }
             if v > Unit(0, 'microliter'):
-                opts.append(xfer)
-                oshp.append(sh)
-                osta.append(st)
+                if isNewInstruction(prev_stamp_type, st,
+                                    containers_used):
+                    self.append(LiquidHandle(locations,
+                                             tip_type=tip_type,
+                                             shape=sh))
+                    locations = location_helper(s, d, v)
+                    containers_used.clear()
+                prev_stamp_type = st
+                containers_used.update([s, d])
 
-        trans = {}
+        
+        # if not new_group:
+        # TODO: append tip movements to all container_types
 
-        # one_tip appends all transfers into one transfer group
-        if one_tip:
-            trans["transfer"] = opts
-            assign(trans, "shape", oshp[0])
-            assign(trans, "tip_layout", 96)
-            stamp_type = osta[0]
-
-            if stamp_type == "full":
-                maxTransfers = 4
-                max_containers = 3
-            elif stamp_type == "col":
-                maxTransfers = 12
-                max_containers = 2
-            else:
-                maxTransfers = 8
-                max_containers = 2
-            if new_group:
-                self.instructions.append(Stamp([trans]))
-            elif (len(self.instructions) > 0 and self.instructions[-1].op == "stamp" and check_stamp_append(trans, self.instructions[-1].groups, maxTransfers, max_containers, volume_switch)):
-                # Append to existing instruction
-                self.instructions[-1].groups.append(trans)
-            else:
-                # Initialize new stamp list/instruction
-                self.instructions.append(Stamp([trans]))
-
-        else:
-            for x, y, z in list(zip(opts, oshp, osta)):
-                trans = {}
-                trans["transfer"] = [x]
-                assign(trans, "shape", y)
-                assign(trans, "tip_layout", 96)
-                stamp_type = z
-
-                if stamp_type == "full":
-                    maxTransfers = 4
-                    max_containers = 3
-                elif stamp_type == "col":
-                    maxTransfers = 12
-                    max_containers = 2
-                else:
-                    maxTransfers = 8
-                    max_containers = 2
-                if new_group:
-                    self.instructions.append(Stamp([trans]))
-                elif (len(self.instructions) > 0 and self.instructions[-1].op == "stamp" and check_stamp_append(trans, self.instructions[-1].groups, maxTransfers, max_containers, volume_switch)):
-                    # Append to existing instruction
-                    self.instructions[-1].groups.append(trans)
-                else:
-                    # Initialize new stamp list/instruction
-                    self.instructions.append(Stamp([trans]))
-
-    def illuminaseq(self, flowcell, lanes, sequencer, mode, index, library_size, dataref, cycles=None):
+    def illuminaseq(self, flowcell, lanes, sequencer, mode, index, library_size,
+                    dataref, cycles=None):
         """
         Load aliquots into specified lanes for Illumina sequencing.
         The specified aliquots should already contain the appropriate mix for

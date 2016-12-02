@@ -159,8 +159,7 @@ def check_valid_origin(origin, stamp_type, columns, rows, shape_format="SBS96"):
         raise RuntimeError("Unsupported plate type for checking origin.")
 
 
-def check_stamp_append(current_xfer, prev_xfer_list, maxTransfers=3,
-                       maxContainers=3,
+def check_stamp_append(current_xfer, prev_xfer_list, maxContainers=3,
                        volumeSwitch=Unit.fromstring("31:microliter")):
     """
     Checks whether current stamp can be appended to previous stamp instruction.
@@ -172,16 +171,14 @@ def check_stamp_append(current_xfer, prev_xfer_list, maxTransfers=3,
 
     # Ensure Instruction contains either all full plate or selective (all rows
     # or all columns)
-    if (prev_cols == cols == 12) and (prev_rows == rows == 8):
-        axis_key = None
-    elif prev_cols == 12:
-        axis_key = "rows"
-        if cols != 12:
-            return False
-    elif prev_rows == 8:
-        axis_key = "columns"
-        if rows != 8:
-            return False
+    # TODO: Check for shape
+    if not ((prev_cols == cols == 12) and (prev_rows == rows == 8)):
+        if prev_cols == 12:
+            if cols != 12:
+                return False
+        elif prev_rows == 8:
+            if rows != 8:
+                return False
 
     # Ensure Instruction contain the same volume type as defined by TCLE
     # Currently volumeSwitch is hardcoded to check against the two tip volume
@@ -199,15 +196,7 @@ def check_stamp_append(current_xfer, prev_xfer_list, maxTransfers=3,
                   [y["from"] for y in current_xfer["transfer"]] +
                   [y["to"] for y in current_xfer["transfer"]])
 
-    if axis_key:
-        num_prev_xfers = sum([x["shape"][axis_key] for x in prev_xfer_list])
-        num_current_xfers = current_xfer["shape"][axis_key]
-    else:
-        num_prev_xfers = len(prev_xfer_list)
-        num_current_xfers = 1
-
-    if (num_prev_xfers + num_current_xfers > maxTransfers or
-            len(set(map(lambda x: x.container, originList))) > maxContainers):
+    if (len(set(map(lambda x: x.container, originList))) > maxContainers):
         return False
 
     return True
