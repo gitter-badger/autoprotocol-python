@@ -6,7 +6,7 @@ from .container_type import ContainerType, _CONTAINER_TYPES
 from .unit import Unit, UnitError
 from .instruction import *  # flake8: noqa
 from .pipette_tools import assign
-from .util import check_valid_origin, check_stamp_append, check_valid_mag, \
+from .util import check_valid_origin, check_valid_mag, \
     check_valid_mag_params, check_valid_gel_purify_extract, is_valid_well, \
     check_valid_incubate_params
 
@@ -1552,7 +1552,7 @@ class Protocol(object):
         self.append(AcousticTransfer(transfers, droplet_size))
 
     def stamp(self, source_origin, dest_origin, volume,
-              shape=dict(rows=8, columns=12),
+              shape=None,
               mix_before=False, mix_after=False, mix_vol=None,
               repetitions=10, flowrate="100:microliter/second",
               aspirate_speed=None, dispense_speed=None, aspirate_source=None,
@@ -1706,6 +1706,8 @@ class Protocol(object):
         shape_format: str
             Specifies the format of the shape that will be used for the stamp.
             Choose between "SBS96" and "SBS384"
+        tip_type: str
+            Specifies the tip_type that will be used for the stamp
 
         """
         arg_list = list(locals().items())
@@ -1715,6 +1717,17 @@ class Protocol(object):
         if shape_format not in _SUPPORTED_SHAPES:
             raise TypeError("Invalid shape given. Shape has to be in {}".format(
                 _SUPPORTED_SHAPES))
+
+        if shape is None:
+            if shape_format is "SBS96":
+                shape = dict(rows=8, columns=12)
+            elif shape_format is "SBS384":
+                shape = dict(rows=16, columns=24)
+
+        if disposal_vol:
+            warnings.warn("Disposal vol is not implemented for stamp driver")
+        if transit_vol:
+            warnings.warn("Transit vol is not implemented for stamp driver")
 
         def get_valid_origin(origin):
             # Support existing transfer syntax by converting a container to all
@@ -1961,9 +1974,9 @@ class Protocol(object):
         # TODO remove this when consolidating to 165ul filtered tips
         if shape_format == "SBS96":
             volume_switch = Unit.fromstring("31:microliter")
-        elif shape_format == "SBS384":
-            # TODO: Replace below when this is calibrated
-            volume_switch = Unit.fromstring("10:microliter")
+        # TODO: Replace below when 15uL filtered tips are onboarded
+        # elif shape_format == "SBS384":
+        #     volume_switch = Unit.fromstring("10:microliter")
 
         if one_tip:
             # Volume consistency
@@ -1971,14 +1984,15 @@ class Protocol(object):
                 temp_vol = Unit.fromstring("0:microliter")
             else:
                 temp_vol = Unit.fromstring(mix_vol)
-            if not (all([v > volume_switch for v in volume]) or
-                    all([v <= volume_switch for v in volume]) or
-                    (temp_vol > volume_switch)):
-                raise RuntimeError("Volumes must all be > or <= 31:microliter "
-                                   "for one_tip = True. If one_source = True, "
-                                   "it may be generating volumes which are "
-                                   "incompatible.")
-
+            # TODO: Add checks for 15uL filtered tips, once that is onbaroded
+            if shape_format == "SBS96":
+                if not (all([v > volume_switch for v in volume]) or
+                        all([v <= volume_switch for v in volume]) or
+                        (temp_vol > volume_switch)):
+                    raise RuntimeError("Volumes must all be > or <= 31:microliter "
+                                       "for one_tip = True. If one_source = True, "
+                                       "it may be generating volumes which are "
+                                       "incompatible.")
             # Container consistency
             st = stamp_types[0]
             if st == "full":
@@ -2002,9 +2016,11 @@ class Protocol(object):
             pre_buffer_resid = Unit.fromstring("5:microliter")
         elif shape_format == "SBS384":
             # TODO: Replace below when this is calibrated
-            tip_capacity = Unit.fromstring("20:microliter")
+            tip_capacity = Unit.fromstring("30:microliter")
             primer_resid = Unit.fromstring("5:microliter")
-            transit_resid = Unit.fromstring("1:microliter")
+            # Transit vol not used in driver, defining to maintain backwards
+            # compatibility
+            transit_resid = Unit.fromstring("0:microliter")
             pre_buffer_resid = Unit.fromstring("5:microliter")
 
         if aspirate_source:
@@ -2014,6 +2030,8 @@ class Protocol(object):
             pre_buffer_resid = Unit.fromstring(pre_buffer)
         if transit_vol:
             transit_resid = Unit.fromstring(transit_vol)
+
+        # Note: this is used in compiler, but its not implemented in drivert
         # Determine max(transit_vol, primer_vol)
         if primer_resid > Unit.fromstring(transit_resid):
             primer_or_transit = primer_resid
@@ -2026,9 +2044,8 @@ class Protocol(object):
             location_list = []
             stamp_params = ["aspirate_speed", "dispense_speed",
                             "aspirate_source", "dispense_target",
-                            "pre_buffer", "disposal_vol", "transit_vol",
-                            "blowout_buffer", "mix_before", "mix_after",
-                            "mix_vol", "repetitions", "flowrate"]
+                            "pre_buffer", "blowout_buffer", "mix_before",
+                            "mix_after", "mix_vol", "repetitions", "flowrate"]
             stamp_args = {param: arg_dict[param] for param in stamp_params
                           if param in arg_dict}
 
@@ -2042,13 +2059,9 @@ class Protocol(object):
 
             return location_list
 
-        locations = []
-        prev_stamp_type = None
-        containers_used = set()
-
-        def isNewInstruction(prev_st, curr_st, cont_used):
+        def is_new_instruction(prev_st, curr_st, cont_used):
             c_copy = cont_used.copy()
-            c_copy.update([s, d])
+            c_copy.update([s.container, d.container])
             if curr_st == "full":
                 max_cont = 3
             elif curr_st == "col":
@@ -2056,8 +2069,11 @@ class Protocol(object):
             else:
                 max_cont = 2
 
+            # Catch first stamp
+            if prev_st is None:
+                return False
             # Create new instruction if different stamp_type
-            if prev_st and curr_st != prev_st:
+            elif curr_st != prev_st:
                 return True
             # Create new instruction if greater than max containers
             elif len(c_copy) > max_cont:
@@ -2068,6 +2084,12 @@ class Protocol(object):
             # Else always create new liquid_handle instruction
             else:
                 return True
+            # if not new_group:
+            # TODO: append tip movements to all containers
+
+        locations = []
+        prev_stamp_type = None
+        containers_used = set()
 
         for s, d, v, sf, st, sh in list(zip(source.wells, dest.wells, volume,
                                             shape_formats, stamp_types, shape)):
@@ -2097,15 +2119,17 @@ class Protocol(object):
                                 well.volume = v
 
                         if v > Unit(0, 'microliter'):
-                            if isNewInstruction(prev_stamp_type, st,
-                                                containers_used):
+                            if is_new_instruction(prev_stamp_type, st,
+                                                  containers_used):
                                 self.append(LiquidHandle(locations,
                                                          tip_type=tip_type,
                                                          shape=sh))
                                 locations = location_helper(s, d, v)
                                 containers_used.clear()
+                            else:
+                                locations += location_helper(s, d, v)
                             prev_stamp_type = st
-                            containers_used.update([s, d])
+                            containers_used.update([s.container, d.container])
 
                     # Logic for splitting out max_tip_vol if volume greater
                     # than max_tip_vol
@@ -2126,15 +2150,17 @@ class Protocol(object):
                                 well.volume = v
 
                         if v > Unit(0, 'microliter'):
-                            if isNewInstruction(prev_stamp_type, st,
-                                                containers_used):
+                            if is_new_instruction(prev_stamp_type, st,
+                                                  containers_used):
                                 self.append(LiquidHandle(locations,
                                                          tip_type=tip_type,
                                                          shape=sh))
                                 locations = location_helper(s, d, v)
                                 containers_used.clear()
+                            else:
+                                locations += location_helper(s, d, v)
                             prev_stamp_type = st
-                            containers_used.update([s, d])
+                            containers_used.update([s.container, d.container])
                 v = diff
 
             self._remove_cover(s.container, "stamp")
@@ -2153,19 +2179,21 @@ class Protocol(object):
                     well.volume = v
 
             if v > Unit(0, 'microliter'):
-                if isNewInstruction(prev_stamp_type, st,
-                                    containers_used):
+                if is_new_instruction(prev_stamp_type, st,
+                                      containers_used):
                     self.append(LiquidHandle(locations,
                                              tip_type=tip_type,
                                              shape=sh))
                     locations = location_helper(s, d, v)
                     containers_used.clear()
+                else:
+                    locations += location_helper(s, d, v)
                 prev_stamp_type = st
-                containers_used.update([s, d])
+                containers_used.update([s.container, d.container])
 
-        
-        # if not new_group:
-        # TODO: append tip movements to all container_types
+        # Finish with last instruction
+        if len(locations) > 0:
+            self.append(LiquidHandle(locations, tip_type=tip_type, shape=sh))
 
     def illuminaseq(self, flowcell, lanes, sequencer, mode, index, library_size,
                     dataref, cycles=None):

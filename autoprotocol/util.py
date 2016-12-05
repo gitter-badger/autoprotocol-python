@@ -159,49 +159,6 @@ def check_valid_origin(origin, stamp_type, columns, rows, shape_format="SBS96"):
         raise RuntimeError("Unsupported plate type for checking origin.")
 
 
-def check_stamp_append(current_xfer, prev_xfer_list, maxContainers=3,
-                       volumeSwitch=Unit.fromstring("31:microliter")):
-    """
-    Checks whether current stamp can be appended to previous stamp instruction.
-    """
-    prev_cols = prev_xfer_list[0]["shape"]["columns"]
-    prev_rows = prev_xfer_list[0]["shape"]["rows"]
-    cols = current_xfer["shape"]["columns"]
-    rows = current_xfer["shape"]["rows"]
-
-    # Ensure Instruction contains either all full plate or selective (all rows
-    # or all columns)
-    # TODO: Check for shape
-    if not ((prev_cols == cols == 12) and (prev_rows == rows == 8)):
-        if prev_cols == 12:
-            if cols != 12:
-                return False
-        elif prev_rows == 8:
-            if rows != 8:
-                return False
-
-    # Ensure Instruction contain the same volume type as defined by TCLE
-    # Currently volumeSwitch is hardcoded to check against the two tip volume
-    # types used in TCLE
-    if prev_xfer_list[0]["transfer"][0]["volume"] <= volumeSwitch:
-        if current_xfer["transfer"][0]["volume"] > volumeSwitch:
-            return False
-    elif prev_xfer_list[0]["transfer"][0]["volume"] > volumeSwitch:
-        if current_xfer["transfer"][0]["volume"] <= volumeSwitch:
-            return False
-
-    # Check if maximum Transfers/Containers is reached
-    originList = ([y["from"] for x in prev_xfer_list for y in x["transfer"]] +
-                  [y["to"] for x in prev_xfer_list for y in x["transfer"]] +
-                  [y["from"] for y in current_xfer["transfer"]] +
-                  [y["to"] for y in current_xfer["transfer"]])
-
-    if (len(set(map(lambda x: x.container, originList))) > maxContainers):
-        return False
-
-    return True
-
-
 def check_valid_mag(container, head):
     """Check container is compatible with magnetic head"""
     shortname = container.container_type.shortname
