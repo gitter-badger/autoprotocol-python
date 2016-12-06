@@ -180,6 +180,13 @@ class ThermocycleTestCase(unittest.TestCase):
 
 
 class DistributeTestCase(unittest.TestCase):
+    def test_distribute_produces_liquid_handle(self):
+        p = Protocol()
+        c = p.ref("test", None, "96-flat", discard=True)
+        p.distribute(c.well(0).set_volume("20:microliter"),
+                     c.well(1),
+                     "5:microliter")
+        self.assertTrue(p.instructions[0].op == "liquid_handle")
 
     def test_distribute_one_well(self):
         p = Protocol()
@@ -269,6 +276,11 @@ class DistributeTestCase(unittest.TestCase):
 
 
 class TransferTestCase(unittest.TestCase):
+    def test_transfer_produces_liquid_handle(self):
+        p = Protocol()
+        c = p.ref("test", None, "96-flat", discard=True)
+        p.transfer(c.well(0), c.well(1), "20:microliter")
+        self.assertTrue(p.instructions[0].op == "liquid_handle")
 
     def test_single_transfer(self):
         p = Protocol()
@@ -519,6 +531,11 @@ class TransferTestCase(unittest.TestCase):
 
 
 class ConsolidateTestCase(unittest.TestCase):
+    def test_consolidate_produces_liquid_handle(self):
+        p = Protocol()
+        c = p.ref("test", None, "96-flat", discard=True)
+        p.consolidate(c.wells_from(0, 3), c.well(4), "10:microliter")
+        self.assertTrue(p.instructions[0].op == "liquid_handle")
 
     def test_multiple_sources(self):
         p = Protocol()
@@ -541,6 +558,12 @@ class ConsolidateTestCase(unittest.TestCase):
 
 
 class StampTestCase(unittest.TestCase):
+    def test_stamp_produces_liquid_handle(self):
+        p = Protocol()
+        plate_1_96 = p.ref("plate_1_96", None, "96-flat", discard=True)
+        plate_2_96 = p.ref("plate_2_96", None, "96-flat", discard=True)
+        p.stamp(plate_1_96.well(0), plate_2_96.well(0), "10:microliter")
+        self.assertTrue(p.instructions[0].op == "liquid_handle")
 
     def test_volume_tracking(self):
         p = Protocol()
@@ -583,6 +606,50 @@ class StampTestCase(unittest.TestCase):
         for w in plate_384_2.all_wells():
             self.assertTrue(w.volume == Unit("5:microliter"))
 
+    def test_stamp_params(self):
+        p = Protocol()
+        plate_1_96 = p.ref("plate_1_96", None, "96-flat", discard=True)
+        plate_2_96 = p.ref("plate_2_96", None, "96-flat", discard=True)
+        p.stamp(plate_1_96.well(0), plate_2_96.well(0), "10:microliter",
+                mix_before=True, mix_after=True, mix_vol="10:microliter",
+                repetitions=10, flowrate="150:microliter/second",
+                aspirate_speed="25:microliter/second",
+                dispense_speed="125:microliter/second",
+                pre_buffer="10:microliter", blowout_buffer=True)
+        self.assertEqual(1, len(p.instructions))
+        self.assertEqual(2, len(p.instructions[0].locations))
+        self.assertEqual(4 + 10 * 2,
+                         len(p.instructions[0].locations[0]["transports"]))
+        self.assertEqual(Unit(-10, "microliter"),
+                         p.instructions[0].locations[0]["transports"][0][
+                             "x_calibrated_volume"])
+        self.assertEqual("well_bottom",
+                         p.instructions[0].locations[0]["transports"][1][
+                             "mode_params"]["tip_position"]["position_z"][
+                             "reference"])
+        self.assertEqual(Unit(1, "millimeter"),
+                         p.instructions[0].locations[0]["transports"][1][
+                             "mode_params"]["tip_position"]["position_z"][
+                             "offset"])
+        self.assertEqual('150:microliter/second',
+                         p.instructions[0].locations[0]["transports"][2][
+                             "flowrate"]["target"])
+        self.assertEqual('150:microliter/second',
+                         p.instructions[0].locations[0]["transports"][3][
+                             "flowrate"]["target"])
+        self.assertEqual('25:microliter/second',
+                         p.instructions[0].locations[0]["transports"][22][
+                             "flowrate"]["target"])
+        self.assertEqual('125:microliter/second',
+                         p.instructions[0].locations[1]["transports"][1][
+                             "flowrate"]["target"])
+        self.assertEqual('150:microliter/second',
+                         p.instructions[0].locations[1]["transports"][22][
+                             "flowrate"]["target"])
+        self.assertEqual(Unit("10:microliter"),
+                         p.instructions[0].locations[1]["transports"][23][
+                             "x_calibrated_volume"])
+
     def test_single_transfers(self):
         p = Protocol()
         plate_1_6 = p.ref("plate_1_6", None, "6-flat", discard=True)
@@ -620,6 +687,34 @@ class StampTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             p.stamp(plate_1_6.well("A1"), plate_2_96.well("D1"),
                     "10:microliter", dict(rows=1, columns=2))
+
+    def test_sbs384_stamp_types(self):
+        p = Protocol()
+        plate_1_96 = p.ref("plate_1_96", None, "96-flat", discard=True)
+        plate_2_96 = p.ref("plate_2_96", None, "96-flat", discard=True)
+        plate_1_384 = p.ref("plate_1_384", None, "384-flat", discard=True)
+        plate_2_384 = p.ref("plate_2_384", None, "384-flat", discard=True)
+
+        with self.assertRaises(ValueError):
+            p.stamp(plate_1_96.well(0), plate_2_96.well(0),
+                    "10:microliter", shape_format="SBS384")
+        with self.assertRaises(ValueError):
+            p.stamp(plate_1_384.well(0), plate_2_384.well(0),
+                    "10:microliter", dict(rows=1, columns=23),
+                    shape_format="SBS384")
+        with self.assertRaises(ValueError):
+            p.stamp(plate_1_384.well(0), plate_2_384.well(0),
+                    "10:microliter", dict(rows=17, columns=1),
+                    shape_format="SBS384")
+        # Below should pass once we enable selective stamp on 384
+        with self.assertRaises(ValueError):
+            p.stamp(plate_1_384.well(0), plate_2_384.well(0),
+                    "10:microliter", dict(rows=1, columns=24),
+                    shape_format="SBS384")
+        with self.assertRaises(ValueError):
+            p.stamp(plate_1_384.well(0), plate_2_384.well(0),
+                    "10:microliter", dict(rows=16, columns=1),
+                    shape_format="SBS384")
 
     def test_multiple_transfers(self):
         # Test: Maximum number of containers on a deck
@@ -709,32 +804,30 @@ class StampTestCase(unittest.TestCase):
         self.assertEqual(len(p.instructions), 4)
 
     def test_one_tip(self):
-
         p = Protocol()
-        plateCount = 2
-        plateList = [p.ref("plate_%s_384" % str(
-            x + 1), None, "384-flat", discard=True) for x in range(plateCount)]
-        p.stamp(plateList[0], plateList[1], "330:microliter", one_tip=True)
+        plate_count = 2
+        plate_list = [p.ref("plate_%s_384" % str(
+            x + 1), None, "384-flat", discard=True) for x in range(plate_count)]
+        p.stamp(plate_list[0], plate_list[1], "330:microliter", one_tip=True)
         self.assertEqual(len(p.instructions[0].locations), 12 * 2)
         self.assertEqual(len(p.instructions), 1)
 
-        p.stamp(plateList[0], plateList[1], "60:microliter", one_tip=True,
+        p.stamp(plate_list[0], plate_list[1], "60:microliter", one_tip=True,
                 shape_format="SBS384")
         self.assertEqual(len(p.instructions[-1].locations), 3 * 2)
         self.assertEqual(len(p.instructions), 2)
 
     def test_one_tip_variable_volume(self):
-
         p = Protocol()
-        plateCount = 2
-        plateList = [p.ref("plate_%s_384" % str(
-            x + 1), None, "384-flat", discard=True) for x in range(plateCount)]
+        plate_count = 2
+        plate_list = [p.ref("plate_%s_384" % str(
+            x + 1), None, "384-flat", discard=True) for x in range(plate_count)]
         with self.assertRaises(RuntimeError):
-            p.stamp(WellGroup([plateList[0].well(0), plateList[0].well(1)]),
-                    WellGroup([plateList[1].well(0), plateList[1].well(1)]),
+            p.stamp(WellGroup([plate_list[0].well(0), plate_list[0].well(1)]),
+                    WellGroup([plate_list[1].well(0), plate_list[1].well(1)]),
                     ["20:microliter", "90:microliter"], one_tip=True)
-        p.stamp(WellGroup([plateList[0].well(0), plateList[0].well(1)]),
-                WellGroup([plateList[1].well(0), plateList[1].well(1)]),
+        p.stamp(WellGroup([plate_list[0].well(0), plate_list[0].well(1)]),
+                WellGroup([plate_list[1].well(0), plate_list[1].well(1)]),
                 ["20:microliter", "90:microliter"], mix_after=True,
                 mix_vol="40:microliter", one_tip=True)
         self.assertEqual(len(p.instructions[0].locations), 2 * 2)
@@ -742,19 +835,20 @@ class StampTestCase(unittest.TestCase):
 
     def test_wellgroup(self):
         p = Protocol()
-        plateCount = 2
-        plateList = [p.ref("plate_%s_384" % str(
-            x + 1), None, "384-flat", discard=True) for x in range(plateCount)]
-        p.stamp(plateList[0].wells(list(range(12))), plateList[1].wells(
+        plate_count = 2
+        plate_list = [p.ref("plate_%s_384" % str(
+            x + 1), None, "384-flat", discard=True) for x in range(plate_count)]
+        p.stamp(plate_list[0].wells(list(range(12))), plate_list[1].wells(
             list(range(12))), "30:microliter", shape={"rows": 8, "columns": 1})
         self.assertEqual(len(p.instructions), 12)
 
+    # TODO: Add similar test once filtered 15uL tips are added
     def test_gt_148uL_transfer(self):
         p = Protocol()
-        plateCount = 2
-        plateList = [p.ref("plate_%s_96" % str(
-            x + 1), None, "96-flat", discard=True) for x in range(plateCount)]
-        p.stamp(plateList[0], plateList[1], "296:microliter")
+        plate_count = 2
+        plate_list = [p.ref("plate_%s_96" % str(
+            x + 1), None, "96-flat", discard=True) for x in range(plate_count)]
+        p.stamp(plate_list[0], plate_list[1], "296:microliter")
         self.assertEqual(2, len(p.instructions))
         self.assertEqual(
             Unit(148, 'microliter'),
@@ -767,39 +861,59 @@ class StampTestCase(unittest.TestCase):
 
     def test_one_source(self):
         p = Protocol()
-        plateCount = 2
-        plateList = [p.ref("plate_%s_384" % str(
-            x + 1), None, "384-flat", discard=True) for x in range(plateCount)]
+        plate_count = 2
+        plate_list = [p.ref("plate_%s_384" % str(
+            x + 1), None, "384-flat", discard=True) for x in range(plate_count)]
         with self.assertRaises(RuntimeError):
-            p.stamp(plateList[0].wells(list(range(4))), plateList[1].wells(list(
-                range(12))), "30:microliter", shape={"rows": 8, "columns": 1},
+            p.stamp(plate_list[0].wells(list(range(4))),
+                    plate_list[1].wells(list(range(12))), "30:microliter",
+                    shape={"rows": 8, "columns": 1},
                     one_source=True)
-        plateList[0].wells_from(
+        plate_list[0].wells_from(
             0, 64, columnwise=True).set_volume("10:microliter")
         with self.assertRaises(RuntimeError):
-            p.stamp(plateList[0].wells(list(range(4))), plateList[1].wells(list(
-                range(12))), "30:microliter", shape={"rows": 8, "columns": 1},
+            p.stamp(plate_list[0].wells(list(range(4))),
+                    plate_list[1].wells(list(range(12))), "30:microliter",
+                    shape={"rows": 8, "columns": 1},
                     one_source=True)
-        plateList[0].wells_from(
+        plate_list[0].wells_from(
             0, 64, columnwise=True).set_volume("15:microliter")
-        p.stamp(plateList[0].wells(list(range(4))), plateList[1].wells(
-            list(range(12))), "5:microliter", shape={"rows": 8, "columns": 1},
+        p.stamp(plate_list[0].wells(list(range(4))),
+                plate_list[1].wells(list(range(12))), "5:microliter",
+                shape={"rows": 8, "columns": 1},
                 one_source=True)
         self.assertEqual(len(p.instructions), 12)
 
     def test_implicit_uncover(self):
         p = Protocol()
-        plateCount = 2
-        plateList = [p.ref("plate_%s_384" % str(x + 1), None, "384-flat",
+        plate_count = 2
+        plate_list = [p.ref("plate_%s_384" % str(x + 1), None, "384-flat",
                            discard=True, cover="universal")
-                     for x in range(plateCount)]
-        for x in plateList:
+                      for x in range(plate_count)]
+        for x in plate_list:
             self.assertTrue(x.cover)
-        p.stamp(plateList[0], plateList[1], "5:microliter")
-        for x in plateList:
+        p.stamp(plate_list[0], plate_list[1], "5:microliter")
+        for x in plate_list:
             self.assertFalse(x.cover)
         self.assertTrue(len(p.instructions) == 6)
         self.assertTrue(p.instructions[0].op == "uncover")
+
+    def test_move_over(self):
+        p = Protocol()
+        plate_count = 3
+        plate_list = [p.ref("plate_%s_384" % str(
+            x + 1), None, "384-flat", discard=True) for x in range(plate_count)]
+        well_list = [plate.well(0) for plate in plate_list]
+        p.stamp([well_list[0], well_list[0]],
+                [well_list[1], well_list[2]],
+                ["0:microliter", "10:microliter"],
+                one_tip=True, shape_format="SBS384")
+        self.assertEqual(len(p.instructions), 1)
+        self.assertEqual(len(p.instructions[0].locations), 4)
+        self.assertEqual(len(p.instructions[0].locations[0]["transports"]), 1)
+        self.assertEqual(len(p.instructions[0].locations[1]["transports"]), 1)
+        self.assertTrue(len(p.instructions[0].locations[2]["transports"]) > 1)
+        self.assertTrue(len(p.instructions[0].locations[3]["transports"]) > 1)
 
 
 class RefifyTestCase(unittest.TestCase):

@@ -181,6 +181,22 @@ def z_position_builder(reference=None, offset=None,
 def mix_transports_helper(volume=Unit("50:microliter"),
                           speed=Unit("100:microliter/second"),
                           repetitions=10):
+    """
+    Helper function for creating mix transports
+
+    Parameters
+    ----------
+    volume : str, Unit, optional
+        volume of liquid to be aspirated and expelled during mixing
+    speed : str, Unit, optional
+        flowrate of liquid during mixing
+    repetitions : int, optional
+        number of times to aspirate and expel liquid during mixing
+
+    Return
+    ------
+    Mix transports: List
+    """
     mix_list = []
     mix_list += [(
         transport_builder(
@@ -325,6 +341,7 @@ def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
         Number of mixing repetitions
     mix_vol: Unit
         Volume of mix after dispensing
+
     Returns
     -------
     Dispense transports : List
@@ -408,7 +425,6 @@ def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
         dispense_transport_list += [(
             transport_builder(
                 x_calibrated_volume=pre_buffer,
-                flowrate=dispense_flowrate,
                 mode_params=mode_params_builder(
                     tip_z=z_position_builder(
                         reference="preceding_position"
@@ -515,6 +531,7 @@ def old_stamp_asp_transports(volume, aspirate_speed=None, dispense_speed=None,
     arg_dict.pop("dispense_target", None)
     arg_dict.pop("dispense_speed", None)
     arg_dict.pop("mix_after", None)
+    arg_dict.pop("blowout_buffer", None)
     return stamp_asp_helper(volume, **parse_stamp_params(**arg_dict))
 
 
@@ -530,11 +547,11 @@ def stamp_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
     Parameters
     ----------
     volume : str, Unit, list
-            The volume(s) of liquid to be transferred from source wells to
-            destination wells.  Volume can be specified as a single string or
-            Unit, or can be given as a list of volumes.  The length of a list
-            of volumes must match the number of destination wells given unless
-            the same volume is to be transferred to each destination well.
+        The volume(s) of liquid to be transferred from source wells to
+        destination wells.  Volume can be specified as a single string or
+        Unit, or can be given as a list of volumes.  The length of a list
+        of volumes must match the number of destination wells given unless
+        the same volume is to be transferred to each destination well.
     aspirate_flowrate : flowrate_builder()
         Flowrate at which to aspirate liquid from source well.
     pre_buffer : str, Unit, optional
@@ -724,6 +741,7 @@ def old_xfer_asp_transports(volume, aspirate_speed=None, dispense_speed=None,
     arg_dict = {k: v for k, v in list(locals().items()) if v is not None}
     arg_dict.pop("dispense_target", None)
     arg_dict.pop("dispense_speed", None)
+    arg_dict.pop("blowout_buffer", None)
     # Handle mix_kwargs by first removing non-applicable parameters
     if "mix_kwargs" in arg_dict:
         arg_dict.update(arg_dict.pop("mix_kwargs"))
@@ -1141,7 +1159,6 @@ def xfer_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
         dispense_transport_list += [(
             transport_builder(
                 x_calibrated_volume=pre_buffer,
-                flowrate=dispense_flowrate,
                 mode_params=mode_params_builder(
                     tip_z=z_position_builder(
                         reference="preceding_position"
@@ -1334,7 +1351,7 @@ def parse_xfer_params(volume, aspirate_speed=None, dispense_speed=None,
     pipette_params = ["aspirate_flowrate", "dispense_flowrate", "pre_buffer",
                       "disposal_vol", "transit_vol", "blowout_buffer",
                       "primer_vol", "calibrated_vol", "tip_z", "following",
-                      "mix_speed", "mix_before", "mix_after", "repetitions",
+                      "flowrate", "mix_before", "mix_after", "repetitions",
                       "mix_vol"]
 
     arg_list = list(locals().items())
@@ -1445,10 +1462,10 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
 
     clld_unit = Unit("0.009740:picofarad")
     plld_unit = Unit("0.000109867:psi")
-    # TCLE fallback defaults to 1:mm above well_bottom if capacitance fails
+    # TCLE fallback defaults to 1:mm above well_bottom
     z_pos_dict = {
         "reference": "well_bottom",
-        "offset": Unit("-1:mm"),
+        "offset": Unit("1:mm"),
     }
     # Following is true by default
     following = True
@@ -1485,7 +1502,7 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
 
     pipette_params = ["aspirate_flowrate", "dispense_flowrate", "pre_buffer",
                       "blowout_buffer", "primer_vol", "calibrated_vol", "tip_z",
-                      "following", "mix_speed", "mix_before", "mix_after",
+                      "following", "flowrate", "mix_before", "mix_after",
                       "repetitions", "mix_vol"]
 
     arg_list = list(locals().items())

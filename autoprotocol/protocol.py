@@ -1839,13 +1839,16 @@ class Protocol(object):
             elif shape_format == "SBS384":
                 if c == 24 and r == 16:
                     stamp_types.append("full")
-                elif c == 24:
-                    stamp_types.append("row")
-                elif r == 16:
-                    stamp_types.append("col")
+                # TODO: Uncomment out below once we decide to support row/col
+                # elif c == 24:
+                #     stamp_types.append("row")
+                # elif r == 16:
+                #     stamp_types.append("col")
+                # else:
+                #     raise ValueError("Only complete rows or columns are "
+                #                      "allowed.")
                 else:
-                    raise ValueError("Only complete rows or columns are "
-                                     "allowed.")
+                    raise ValueError("Only full stamp allowed.")
 
         # Check dimensions of shape and ensure that origins are valid
         for s, d, sf, st in list(zip(source.wells, dest.wells, shape_formats,
