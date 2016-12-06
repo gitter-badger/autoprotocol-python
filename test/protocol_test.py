@@ -573,9 +573,15 @@ class StampTestCase(unittest.TestCase):
         self.assertEqual(plate_384_2.well("C3").volume, Unit(15, "microliter"))
         self.assertEqual(plate_384_2.well("B2").volume, Unit(0, "microliter"))
 
-        # Test 384
-        plate_384 = p.ref("plate_384", None, "384-pcr", discard=True)
-        plate_384_2 = p.ref("plate_384_2", None, "384-pcr", discard=True)
+        # Test SBS384
+        plate_384.all_wells().set_volume("20:microliter")
+        plate_384_2.all_wells().set_volume("0:microliter")
+        p.stamp(plate_384.well(0), plate_384_2.well(0), "5:microliter",
+                shape_format="SBS384")
+        for w in plate_384.all_wells():
+            self.assertTrue(w.volume == Unit("15:microliter"))
+        for w in plate_384_2.all_wells():
+            self.assertTrue(w.volume == Unit("5:microliter"))
 
     def test_single_transfers(self):
         p = Protocol()
@@ -634,7 +640,8 @@ class StampTestCase(unittest.TestCase):
                           range(maxContainers)]
             p.stamp(wells_96, wells_96_2, "10:microliter", one_tip=True)
 
-        plates_384 = [p.ref("plate_%s_96" % str(x + 1), None, "96-flat",
+        p = Protocol()
+        plates_384 = [p.ref("plate_%s_384" % str(x + 1), None, "384-flat",
                            discard=True) for x in range(maxContainers + 1)]
         wells_384 = [plates_384[i].well(0) for i in range(maxContainers - 1)]
         wells_384_2 = [plates_384[i+1].well(0) for i in
@@ -653,77 +660,52 @@ class StampTestCase(unittest.TestCase):
         plates_96 = [p.ref("plate_%s_96" % str(x + 1), None, "96-flat",
                            discard=True) for x in range(2)]
 
+        # Aggregation now handled downstream
         p.stamp(plates_96[0].well("G1"), plates_96[1].well("G1"),
                 "10:microliter", dict(rows=1, columns=12))
         self.assertEqual(len(p.instructions), 1)
         p.stamp(plates_96[0].well("G1"), plates_96[1].well("G1"),
                 "10:microliter", dict(rows=2, columns=12))
-        self.assertEqual(len(p.instructions), 1)
-        self.assertEqual(len(p.instructions[0].groups), 2)
+        self.assertEqual(len(p.instructions), 2)
 
+        # Aggregation now handled downstream
         p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
                 "10:microliter", dict(rows=8, columns=2))
         p.stamp(plates_96[0].well("A1"), plates_96[1].well("A12"),
                 "10:microliter", dict(rows=8, columns=1))
-        self.assertEqual(len(p.instructions), 2)
-        self.assertEqual(len(p.instructions[1].groups), 2)
+        self.assertEqual(len(p.instructions), 4)
 
+        # Aggregation now handled downstream
         p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
                 "10:microliter", dict(rows=8, columns=12))
         p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
                 "10:microliter", dict(rows=8, columns=12))
-        self.assertEqual(len(p.instructions), 3)
-        self.assertEqual(len(p.instructions[2].groups), 2)
+        self.assertEqual(len(p.instructions), 6)
 
         # Test: Check on switching between tip volume types
         p = Protocol()
         plates_96 = [p.ref("plate_%s_96" % str(x + 1), None, "96-flat",
                            discard=True) for x in range(2)]
-        p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
-                "31:microliter")
-        p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
-                "31:microliter")
+        p.stamp([plates_96[0].well("A1")] * 2,
+                [plates_96[1].well("A1")] * 2,
+                ["31:microliter"] * 2,
+                one_tip=True)
         self.assertEqual(len(p.instructions), 1)
-        self.assertEqual(2, len(p.instructions[0].groups))
+        self.assertEqual(2 * 2, len(p.instructions[0].locations))
 
         p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
                 "90:microliter")
+        # Aggregation now handled downstream
         self.assertEqual(len(p.instructions), 2)
-        self.assertEqual(2, len(p.instructions[0].groups))
+        self.assertEqual(2 * 2, len(p.instructions[0].locations))
         p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
                 "90:microliter")
-        self.assertEqual(len(p.instructions), 2)
-        self.assertEqual(2, len(p.instructions[1].groups))
+        self.assertEqual(len(p.instructions), 3)
+        self.assertEqual(2, len(p.instructions[1].locations))
 
+        # Aggregation now handled downstream
         p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
                 "31:microliter")
-        self.assertEqual(len(p.instructions), 3)
-
-        # Test: Check on max transfer limit - Row-wise
-        p = Protocol()
-        plates_96 = [p.ref("plate_%s_96" % str(x + 1), None, "96-flat",
-                           discard=True) for x in range(3)]
-        # Mixture of columns
-        p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
-                "10:microliter", dict(rows=1, columns=12))
-        p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
-                "10:microliter", dict(rows=3, columns=12))
-        p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
-                "10:microliter", dict(rows=4, columns=12))
-        self.assertEqual(len(p.instructions), 1)
-        # Maximum number of row transfers
-        for i in range(8):
-            p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
-                    "10:microliter", dict(rows=1, columns=12))
-        self.assertEqual(len(p.instructions), 2)
-        self.assertEqual(len(p.instructions[0].groups), 3)
-        self.assertEqual(len(p.instructions[1].groups), 8)
-
-        p.stamp(plates_96[0].well("A1"), plates_96[1].well("A1"),
-                "10:microliter", dict(rows=1, columns=12))
-        self.assertEqual(len(p.instructions), 3)
-        p.stamp(plates_96[0].well("A1"), plates_96[2].well("A1"),
-                "10:microliter", dict(rows=1, columns=12))
         self.assertEqual(len(p.instructions), 4)
 
     def test_one_tip(self):
@@ -748,12 +730,15 @@ class StampTestCase(unittest.TestCase):
         plateList = [p.ref("plate_%s_384" % str(
             x + 1), None, "384-flat", discard=True) for x in range(plateCount)]
         with self.assertRaises(RuntimeError):
-            p.stamp(WellGroup([plateList[0].well(0), plateList[0].well(1)]), WellGroup([plateList[
-                    1].well(0), plateList[1].well(1)]), ["20:microliter", "90:microliter"], one_tip=True)
-        p.stamp(WellGroup([plateList[0].well(0), plateList[0].well(1)]), WellGroup([plateList[1].well(0), plateList[
-                1].well(1)]), ["20:microliter", "90:microliter"], mix_after=True, mix_vol="40:microliter", one_tip=True)
-        self.assertEqual(len(p.instructions[0].groups[0]["transfer"]), 2)
-        self.assertEqual(len(p.instructions[0].groups), 1)
+            p.stamp(WellGroup([plateList[0].well(0), plateList[0].well(1)]),
+                    WellGroup([plateList[1].well(0), plateList[1].well(1)]),
+                    ["20:microliter", "90:microliter"], one_tip=True)
+        p.stamp(WellGroup([plateList[0].well(0), plateList[0].well(1)]),
+                WellGroup([plateList[1].well(0), plateList[1].well(1)]),
+                ["20:microliter", "90:microliter"], mix_after=True,
+                mix_vol="40:microliter", one_tip=True)
+        self.assertEqual(len(p.instructions[0].locations), 2 * 2)
+        self.assertEqual(len(p.instructions), 1)
 
     def test_wellgroup(self):
         p = Protocol()
@@ -787,17 +772,20 @@ class StampTestCase(unittest.TestCase):
             x + 1), None, "384-flat", discard=True) for x in range(plateCount)]
         with self.assertRaises(RuntimeError):
             p.stamp(plateList[0].wells(list(range(4))), plateList[1].wells(list(
-                range(12))), "30:microliter", shape={"rows": 8, "columns": 1}, one_source=True)
+                range(12))), "30:microliter", shape={"rows": 8, "columns": 1},
+                    one_source=True)
         plateList[0].wells_from(
             0, 64, columnwise=True).set_volume("10:microliter")
         with self.assertRaises(RuntimeError):
             p.stamp(plateList[0].wells(list(range(4))), plateList[1].wells(list(
-                range(12))), "30:microliter", shape={"rows": 8, "columns": 1}, one_source=True)
+                range(12))), "30:microliter", shape={"rows": 8, "columns": 1},
+                    one_source=True)
         plateList[0].wells_from(
             0, 64, columnwise=True).set_volume("15:microliter")
         p.stamp(plateList[0].wells(list(range(4))), plateList[1].wells(
-            list(range(12))), "5:microliter", shape={"rows": 8, "columns": 1}, one_source=True)
-        self.assertEqual(len(p.instructions[0].groups), 12)
+            list(range(12))), "5:microliter", shape={"rows": 8, "columns": 1},
+                one_source=True)
+        self.assertEqual(len(p.instructions), 12)
 
     def test_implicit_uncover(self):
         p = Protocol()
@@ -810,7 +798,7 @@ class StampTestCase(unittest.TestCase):
         p.stamp(plateList[0], plateList[1], "5:microliter")
         for x in plateList:
             self.assertFalse(x.cover)
-        self.assertTrue(len(p.instructions) == 3)
+        self.assertTrue(len(p.instructions) == 6)
         self.assertTrue(p.instructions[0].op == "uncover")
 
 

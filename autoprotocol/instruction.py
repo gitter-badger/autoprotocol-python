@@ -1,7 +1,5 @@
 import json
-
-from autoprotocol.liquid_handle_builders import shape_builder
-
+from .liquid_handle_builders import shape_builder
 from .pipette_tools import assign
 
 

@@ -421,6 +421,36 @@ def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
     return dispense_transport_list
 
 
+def move_over_transport(safe_offset=Unit("10:mm")):
+    """
+    Helper function for generating a transport which hovers above the target
+    location
+
+    Parameters
+    ----------
+    safe_offset: str, Unit
+        Safe offset controls what height above the well_top to move to
+
+    Returns
+    -------
+    transport_list: List
+    """
+    transport_list = []
+    safe_offset = Unit(safe_offset)
+    transport_list += [(
+        transport_builder(
+            mode_params=mode_params_builder(
+                tip_z=z_position_builder(
+                    reference="well_top",
+                    offset=safe_offset
+                ),
+                liquid_class="air"
+            )
+        )
+    )]
+    return transport_list
+
+
 def old_stamp_asp_transports(volume, aspirate_speed=None, dispense_speed=None,
                              aspirate_source=None, dispense_target=None,
                              pre_buffer=None, disposal_vol=None,

@@ -1,6 +1,6 @@
 from .liquid_handle_builders import location_builder, old_xfer_asp_transports,\
     old_xfer_dsp_transports, _MAX_SINGLE_TIP_CAPACITY, mix_transports_helper, \
-    old_stamp_asp_transports, old_stamp_dsp_transports
+    old_stamp_asp_transports, old_stamp_dsp_transports, move_over_transport
 from .container import Container, Well, WellGroup, SEAL_TYPES, COVER_TYPES
 from .container_type import ContainerType, _CONTAINER_TYPES
 from .unit import Unit, UnitError
@@ -1922,6 +1922,7 @@ class Protocol(object):
                     sources = source.wells[:len_dest]
                     destinations = dest.wells
                     volumes = volume
+                # TODO: Fix 0uL (move over container) behavior for one_source
                 else:
                     sources = []
                     source_counter = 0
@@ -2040,7 +2041,9 @@ class Protocol(object):
 
         max_tip_vol = tip_capacity - pre_buffer_resid - primer_or_transit
 
-        def location_helper(src_well, dest_well, xfer_vol):
+        def location_helper(src_well, dest_well, stamp_vol, move_over=False):
+            # TODO: Formalize move_over behavior. Move_over is currently a
+            # workaround to force a tip to hover above desired locations
             location_list = []
             stamp_params = ["aspirate_speed", "dispense_speed",
                             "aspirate_source", "dispense_target",
@@ -2049,8 +2052,17 @@ class Protocol(object):
             stamp_args = {param: arg_dict[param] for param in stamp_params
                           if param in arg_dict}
 
-            aspirate_list = old_stamp_asp_transports(xfer_vol, **stamp_args)
-            dispense_list = old_stamp_dsp_transports(xfer_vol, **stamp_args)
+            if move_over:
+                if stamp_vol != Unit("0:ul"):
+                    raise ValueError("Move_over cannot be true if we are "
+                                     "transferring some volume")
+                aspirate_list = move_over_transport()
+                dispense_list = move_over_transport()
+            else:
+                aspirate_list = old_stamp_asp_transports(stamp_vol,
+                                                         **stamp_args)
+                dispense_list = old_stamp_dsp_transports(stamp_vol,
+                                                         **stamp_args)
 
             location_list.append(location_builder(location=src_well,
                                                   transports=aspirate_list))
@@ -2095,6 +2107,13 @@ class Protocol(object):
                                             shape_formats, stamp_types, shape)):
             c = sf["columns"]
             r = sf["rows"]
+
+            # Workaround for moving over containers without transfer
+            if v == Unit(0, "microliter") and one_tip:
+                print("move_over_well")
+                move_over_well = True
+            else:
+                move_over_well = False
 
             # Splitting volumes up if greater than max_tip_vol
             if v > max_tip_vol:
@@ -2178,16 +2197,22 @@ class Protocol(object):
                 else:
                     well.volume = v
 
-            if v > Unit(0, 'microliter'):
+            if v > Unit(0, 'microliter') or move_over_well:
                 if is_new_instruction(prev_stamp_type, st,
                                       containers_used):
                     self.append(LiquidHandle(locations,
                                              tip_type=tip_type,
                                              shape=sh))
-                    locations = location_helper(s, d, v)
+                    if move_over_well:
+                        locations = location_helper(s, d, v, move_over=True)
+                    else:
+                        locations = location_helper(s, d, v)
                     containers_used.clear()
                 else:
-                    locations += location_helper(s, d, v)
+                    if move_over_well:
+                        locations += location_helper(s, d, v, move_over=True)
+                    else:
+                        locations += location_helper(s, d, v)
                 prev_stamp_type = st
                 containers_used.update([s.container, d.container])
 
