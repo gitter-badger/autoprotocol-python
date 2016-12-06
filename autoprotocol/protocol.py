@@ -5187,16 +5187,6 @@ class Protocol(object):
             if v.container is container:
                 return k
 
-    def _pipette(self, groups):
-        """Append given pipette groups to the protocol
-
-        """
-        if len(self.instructions) > 0 and \
-                self.instructions[-1].op == 'pipette':
-            self.instructions[-1].groups += groups
-        else:
-            self.instructions.append(Pipette(groups))
-
     def _remove_cover(self, container, action):
         if not container.container_type.is_tube:
             if not (container.is_covered() or container.is_sealed()):
