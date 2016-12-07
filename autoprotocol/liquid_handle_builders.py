@@ -203,7 +203,7 @@ def mix_transports_helper(volume=Unit("50:microliter"),
             mode_params=mode_params_builder(
                 tip_z=z_position_builder(
                     reference="well_bottom",
-                    offset=Unit("0.5:mm")
+                    offset=Unit("1:mm")
                 )
             )
         )
@@ -385,7 +385,7 @@ def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
                 mode_params=mode_params_builder(
                     tip_z=z_position_builder(
                         reference="well_bottom",
-                        offset=Unit("0.5:mm")
+                        offset=Unit("1:mm")
                     )
                 )
             )
@@ -532,12 +532,16 @@ def old_stamp_asp_transports(volume, aspirate_speed=None, dispense_speed=None,
     arg_dict.pop("dispense_speed", None)
     arg_dict.pop("mix_after", None)
     arg_dict.pop("blowout_buffer", None)
-    return stamp_asp_helper(volume, **parse_stamp_params(**arg_dict))
+
+    old_params = parse_stamp_params(**arg_dict)
+    # Following did not apply for stamp aspirates
+    old_params.pop("following", None)
+    return stamp_asp_helper(volume, **old_params)
 
 
 def stamp_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
                      tip_z=None, calibrated_vol=None, primer_vol=None,
-                     following=None, mix_before=None, mix_speed=None,
+                     mix_before=None, mix_speed=None,
                      repetitions=None, mix_vol=None):
     """
     Helper function for recreating similar transport behavior for aspirates.
@@ -562,8 +566,6 @@ def stamp_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
         Calibrated volume that will be aspirated
     primer_vol: Unit
         Primer volume that will be aspirated in addition to volume
-    following: bool
-        If true, the tip will try to "follow" the liquid level as its aspirating
     mix_before: Bool
         Determines if mixing is carried out before aspirating
     mix_speed: Unit
@@ -640,14 +642,8 @@ def stamp_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
     if not primer_vol:
         primer_vol = Unit("5:uL")
 
-    if following:
-        aspirate_tip_z = z_position_builder(
-                            reference="liquid_surface",
-                            detection_method="tracked",
-                            offset=Unit("-1:mm")
-                        )
-    else:
-        aspirate_tip_z = z_position_builder(reference="preceding_position")
+    # No following unless explicitly stated since Bravo doesn't have sensing
+    aspirate_tip_z = z_position_builder(reference="preceding_position")
 
     cal_asp_vol = -(calibrated_vol + primer_vol) if \
         calibrated_vol else None

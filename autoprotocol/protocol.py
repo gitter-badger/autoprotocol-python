@@ -1703,7 +1703,7 @@ class Protocol(object):
             this parameter. In order to force groupings, please ensure that
             the location you would like to transfer to is included in the
             instruction.
-        shape_format: str
+        shape_format: str, optional
             Specifies the format of the shape that will be used for the stamp.
             Choose between "SBS96" and "SBS384"
         tip_type: str
@@ -1714,7 +1714,7 @@ class Protocol(object):
         arg_dict = {k: v for k, v in arg_list if v is not None}
 
         _SUPPORTED_SHAPES = ["SBS96", "SBS384"]
-        if shape_format not in _SUPPORTED_SHAPES:
+        if shape_format and shape_format not in _SUPPORTED_SHAPES:
             raise TypeError("Invalid shape given. Shape has to be in {}".format(
                 _SUPPORTED_SHAPES))
 
@@ -2145,7 +2145,7 @@ class Protocol(object):
                                                   containers_used):
                                 self.append(LiquidHandle(locations,
                                                          tip_type=tip_type,
-                                                         shape=sh))
+                                                         shape=sf))
                                 locations = location_helper(s, d, v)
                                 containers_used.clear()
                             else:
@@ -2176,7 +2176,7 @@ class Protocol(object):
                                                   containers_used):
                                 self.append(LiquidHandle(locations,
                                                          tip_type=tip_type,
-                                                         shape=sh))
+                                                         shape=sf))
                                 locations = location_helper(s, d, v)
                                 containers_used.clear()
                             else:
@@ -2205,7 +2205,7 @@ class Protocol(object):
                                       containers_used):
                     self.append(LiquidHandle(locations,
                                              tip_type=tip_type,
-                                             shape=sh))
+                                             shape=sf))
                     if move_over_well:
                         locations = location_helper(s, d, v, move_over=True)
                     else:
@@ -2221,7 +2221,7 @@ class Protocol(object):
 
         # Finish with last instruction
         if len(locations) > 0:
-            self.append(LiquidHandle(locations, tip_type=tip_type, shape=sh))
+            self.append(LiquidHandle(locations, tip_type=tip_type, shape=sf))
 
     def illuminaseq(self, flowcell, lanes, sequencer, mode, index, library_size,
                     dataref, cycles=None):
@@ -2714,7 +2714,8 @@ class Protocol(object):
         self.instructions.append(
             Dispense(ref, reagent, columns, speed_percentage, is_resource_id))
 
-    def dispense_full_plate(self, ref, reagent, volume, speed_percentage=None, is_resource_id=False):
+    def dispense_full_plate(self, ref, reagent, volume, speed_percentage=None,
+                            is_resource_id=False):
         """
         Dispense the specified amount of the specified reagent to every well
         of a container using a reagent dispenser.
