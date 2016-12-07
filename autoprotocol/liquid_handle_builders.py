@@ -300,7 +300,9 @@ def old_stamp_dsp_transports(volume, aspirate_speed=None, dispense_speed=None,
     arg_dict.pop("aspirate_source", None)
     arg_dict.pop("aspirate_speed", None)
     arg_dict.pop("mix_before", None)
-    return stamp_dsp_helper(volume, **parse_stamp_params(**arg_dict))
+
+    old_params = parse_stamp_params(**arg_dict)
+    return stamp_dsp_helper(volume, **old_params)
 
 
 def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
@@ -427,7 +429,8 @@ def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
                 x_calibrated_volume=pre_buffer,
                 mode_params=mode_params_builder(
                     tip_z=z_position_builder(
-                        reference="preceding_position"
+                        reference="well_top",
+                        offset=Unit("-2:mm")
                     ),
                     liquid_class="air"
                 )
@@ -536,11 +539,13 @@ def old_stamp_asp_transports(volume, aspirate_speed=None, dispense_speed=None,
     old_params = parse_stamp_params(**arg_dict)
     # Following did not apply for stamp aspirates
     old_params.pop("following", None)
+
     return stamp_asp_helper(volume, **old_params)
 
 
 def stamp_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
                      tip_z=None, calibrated_vol=None, primer_vol=None,
+                     blowout_buffer=None,
                      mix_before=None, mix_speed=None,
                      repetitions=None, mix_vol=None):
     """
@@ -579,6 +584,7 @@ def stamp_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
     -------
     Aspirate transports : List
     """
+
     # Setup aspirate
     aspirate_transport_list = []
     volume = Unit(volume)
@@ -1310,7 +1316,7 @@ def parse_xfer_params(volume, aspirate_speed=None, dispense_speed=None,
             if k == "aspirate_speed":
                 aspirate_flowrate = flowrate_builder(v["max"],
                                                      initial=v["start"])
-            calibrated_vol = Unit(v) if k == "cal_volume" else None
+            calibrated_vol = Unit(v) if k == "volume" else None
             primer_vol = Unit(v) if k == "primer_vol" else None
             if k == "depth":
                 following, tip_z = parse_depth(v)
@@ -1326,7 +1332,7 @@ def parse_xfer_params(volume, aspirate_speed=None, dispense_speed=None,
             if k == "dispense_speed":
                 dispense_flowrate = flowrate_builder(v["max"],
                                                      initial=v["start"])
-            calibrated_vol = Unit(v) if k == "cal_volume" else None
+            calibrated_vol = Unit(v) if k == "volume" else None
             if k == "depth":
                 following, tip_z = parse_depth(v)
                 z_pos_dict.update(tip_z)
@@ -1450,6 +1456,9 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
     else:
         pre_buffer = old_pre_buffer(volume)
 
+    if not blowout_buffer and pre_buffer > Unit("0:ul"):
+        blowout_buffer = True
+
     if aspirate_speed:
         aspirate_flowrate = flowrate_builder(aspirate_speed)
 
@@ -1472,7 +1481,7 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
             if k == "aspirate_speed":
                 aspirate_flowrate = flowrate_builder(v["max"],
                                                      initial=v["start"])
-            calibrated_vol = Unit(v) if k == "cal_volume" else None
+            calibrated_vol = Unit(v) if k == "volume" else None
             primer_vol = Unit(v) if k == "primer_vol" else None
             if k == "depth":
                 following, tip_z = parse_depth(v)
@@ -1483,7 +1492,7 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
             if k == "dispense_speed":
                 dispense_flowrate = flowrate_builder(v["max"],
                                                      initial=v["start"])
-            calibrated_vol = Unit(v) if k == "cal_volume" else None
+            calibrated_vol = Unit(v) if k == "volume" else None
             if k == "depth":
                 following, tip_z = parse_depth(v)
                 z_pos_dict.update(tip_z)
@@ -1507,4 +1516,5 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
 
     # Handling mix kwargs
     pipette_args["mix_speed"] = pipette_args.pop("flowrate", None)
+
     return pipette_args

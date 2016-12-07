@@ -1557,7 +1557,7 @@ class Protocol(object):
               repetitions=10, flowrate="100:microliter/second",
               aspirate_speed=None, dispense_speed=None, aspirate_source=None,
               dispense_target=None, pre_buffer=None, disposal_vol=None,
-              transit_vol=None, blowout_buffer=None, one_source=False,
+              transit_vol=None, blowout_buffer=True, one_source=False,
               one_tip=False, new_group=False,
               shape_format="SBS96", tip_type=None):
         """
@@ -1710,6 +1710,7 @@ class Protocol(object):
             Specifies the tip_type that will be used for the stamp
 
         """
+
         arg_list = list(locals().items())
         arg_dict = {k: v for k, v in arg_list if v is not None}
 
@@ -2113,7 +2114,6 @@ class Protocol(object):
 
             # Workaround for moving over containers without transfer
             if v == Unit(0, "microliter") and one_tip:
-                print("move_over_well")
                 move_over_well = True
             else:
                 move_over_well = False
