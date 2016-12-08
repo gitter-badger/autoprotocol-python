@@ -2571,10 +2571,10 @@ class Protocol(object):
         locations = []
         for w in well.wells:
             self._remove_cover(w.container, "mix")
-            locations += location_builder(
+            locations += [location_builder(
                 location=w,
                 transports=mix_transports_helper(volume, speed, repetitions)
-            )
+            )]
             if not one_tip:
                 self.append(LiquidHandle(locations))
                 locations = []
