@@ -241,7 +241,8 @@ def old_stamp_dsp_transports(volume, aspirate_speed=None, dispense_speed=None,
                              pre_buffer=None, disposal_vol=None,
                              transit_vol=None, blowout_buffer=None,
                              mix_before=None, mix_after=None, mix_vol=None,
-                             repetitions=None, flowrate=None):
+                             repetitions=None, flowrate=None,
+                             new_defaults=None):
     """
     Helper function for recreating aspirate behavior using transports
 
@@ -291,6 +292,10 @@ def old_stamp_dsp_transports(volume, aspirate_speed=None, dispense_speed=None,
     blowout_buffer : bool, optional
         If true the operation will dispense the pre_buffer along with the
         dispense volume. Cannot be true if disposal_vol is specified.
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
 
     Returns
     -------
@@ -309,7 +314,8 @@ def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
                      blowout_buffer=None, tip_z=None,
                      following=None, calibrated_vol=None,
                      mix_speed=None, repetitions=None,
-                     mix_vol=None, mix_after=None):
+                     mix_vol=None, mix_after=None,
+                     new_defaults=None):
     """
     Helper function for creating dispense behavior using transports
 
@@ -343,6 +349,10 @@ def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
         Number of mixing repetitions
     mix_vol: Unit
         Volume of mix after dispensing
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
 
     Returns
     -------
@@ -424,13 +434,22 @@ def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
     # of blowout (maybe a tip touch :) )
     # Dispense Pre-Buffer
     if blowout_buffer and pre_buffer > Unit("0:uL"):
+        dispense_transport_list += [
+            transport_builder(
+                mode_params=mode_params_builder(
+                    tip_z=z_position_builder(
+                        reference="well_top",
+                        offset=Unit("-2:mm")
+                    ),
+                )
+            )
+        ]
         dispense_transport_list += [(
             transport_builder(
                 x_calibrated_volume=pre_buffer,
                 mode_params=mode_params_builder(
                     tip_z=z_position_builder(
-                        reference="well_top",
-                        offset=Unit("-2:mm")
+                        reference="preceding_position",
                     ),
                     liquid_class="air"
                 )
@@ -475,7 +494,8 @@ def old_stamp_asp_transports(volume, aspirate_speed=None, dispense_speed=None,
                              pre_buffer=None, disposal_vol=None,
                              transit_vol=None, blowout_buffer=None,
                              mix_before=None, mix_after=None, mix_vol=None,
-                             repetitions=None, flowrate=None):
+                             repetitions=None, flowrate=None,
+                             new_defaults=None):
     """
     Helper function for recreating aspirate behavior using transports
 
@@ -525,6 +545,10 @@ def old_stamp_asp_transports(volume, aspirate_speed=None, dispense_speed=None,
     blowout_buffer : bool, optional
         If true the operation will dispense the pre_buffer along with the
         dispense volume. Cannot be true if disposal_vol is specified.
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
 
     Returns
     -------
@@ -547,7 +571,8 @@ def stamp_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
                      tip_z=None, calibrated_vol=None, primer_vol=None,
                      blowout_buffer=None,
                      mix_before=None, mix_speed=None,
-                     repetitions=None, mix_vol=None):
+                     repetitions=None, mix_vol=None,
+                     new_defaults=None):
     """
     Helper function for recreating similar transport behavior for aspirates.
     Note that volumes are not treated in the exact same manner, which may
@@ -579,6 +604,10 @@ def stamp_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
         Number of mixing repetitions
     mix_vol: Unit
         Volume of mix after dispensing
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
 
     Returns
     -------
@@ -1369,7 +1398,7 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
                        aspirate_source=None, dispense_target=None,
                        pre_buffer=None, blowout_buffer=None, mix_before=None,
                        mix_after=None, mix_vol=None, repetitions=None,
-                       flowrate=None):
+                       flowrate=None, new_defaults=None):
     """
     Helper function for mapping old stamp parameters to transport
     specific parameters
@@ -1417,6 +1446,10 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
     shape_format: str
         Specifies the format of the shape that will be used for the stamp.
         Choose between "SBS96" and "SBS384"
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
     """
     if aspirate_source and dispense_target:
         raise ValueError("parse_stamp_params only supports either "
@@ -1465,8 +1498,6 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
     if dispense_speed:
         dispense_flowrate = flowrate_builder(dispense_speed)
 
-    clld_unit = Unit("0.009740:picofarad")
-    plld_unit = Unit("0.000109867:psi")
     # TCLE fallback defaults to 1:mm above well_bottom
     z_pos_dict = {
         "reference": "well_bottom",
@@ -1508,7 +1539,7 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
     pipette_params = ["aspirate_flowrate", "dispense_flowrate", "pre_buffer",
                       "blowout_buffer", "primer_vol", "calibrated_vol", "tip_z",
                       "following", "flowrate", "mix_before", "mix_after",
-                      "repetitions", "mix_vol"]
+                      "repetitions", "mix_vol", "new_defaults"]
 
     arg_list = list(locals().items())
     pipette_args = {k: v for k, v in arg_list if k in pipette_params and v is

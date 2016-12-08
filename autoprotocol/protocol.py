@@ -2049,14 +2049,16 @@ class Protocol(object):
 
         max_tip_vol = tip_capacity - pre_buffer_resid - primer_or_transit
 
-        def location_helper(src_well, dest_well, stamp_vol, move_over=False):
+        def location_helper(src_well, dest_well, stamp_vol, move_over=False,
+                            new_defaults=False):
             # TODO: Formalize move_over behavior. Move_over is currently a
             # workaround to force a tip to hover above desired locations
             location_list = []
             stamp_params = ["aspirate_speed", "dispense_speed",
                             "aspirate_source", "dispense_target",
                             "pre_buffer", "blowout_buffer", "mix_before",
-                            "mix_after", "mix_vol", "repetitions", "flowrate"]
+                            "mix_after", "mix_vol", "repetitions", "flowrate",
+                            "new_defaults"]
             stamp_args = {param: arg_dict[param] for param in stamp_params
                           if param in arg_dict}
 

@@ -647,7 +647,7 @@ class StampTestCase(unittest.TestCase):
                          p.instructions[0].locations[1]["transports"][22][
                              "flowrate"]["target"])
         self.assertEqual(Unit("10:microliter"),
-                         p.instructions[0].locations[1]["transports"][23][
+                         p.instructions[0].locations[1]["transports"][24][
                              "x_calibrated_volume"])
 
     def test_single_transfers(self):
