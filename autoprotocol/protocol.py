@@ -1559,7 +1559,8 @@ class Protocol(object):
               dispense_target=None, pre_buffer=None, disposal_vol=None,
               transit_vol=None, blowout_buffer=True, one_source=False,
               one_tip=False, new_group=False,
-              shape_format="SBS96", tip_type=None):
+              shape_format="SBS96", tip_type=None,
+              new_defaults=False):
         """
         **Note: the way this method now works is significantly different to the
         way it has in previous versions, please make sure to read the
@@ -1708,7 +1709,10 @@ class Protocol(object):
             Choose between "SBS96" and "SBS384"
         tip_type: str
             Specifies the tip_type that will be used for the stamp
-
+        new_defaults: bool, optional
+            Specifies if recommended pipetting defaults will be used.
+            This is false by default to maintain backwards compatibility and
+            produce exactly the same behavior as before
         """
 
         arg_list = list(locals().items())
