@@ -459,30 +459,22 @@ def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
     return dispense_transport_list
 
 
-def move_over_transport(safe_offset=Unit("10:mm")):
+def move_over_transport():
     """
     Helper function for generating a transport which hovers above the target
     location
-
-    Parameters
-    ----------
-    safe_offset: str, Unit
-        Safe offset controls what height above the well_top to move to
 
     Returns
     -------
     transport_list: List
     """
     transport_list = []
-    safe_offset = Unit(safe_offset)
     transport_list += [(
         transport_builder(
             mode_params=mode_params_builder(
                 tip_z=z_position_builder(
-                    reference="well_top",
-                    offset=safe_offset
-                ),
-                liquid_class="air"
+                    reference="preceding_position"
+                )
             )
         )
     )]
@@ -1484,6 +1476,23 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
                                  "multichannel")
         return following, z_pos_dict
 
+    # Helper for generating old calibrated vol
+    def get_cal_vol(v):
+        if v <= Unit("0.5:ul"):
+            return v * 1.16
+        elif v <= Unit("1:ul"):
+            return v * 1.24 - Unit("0.04:ul")
+        elif v <= Unit("2.5:ul"):
+            return v * 1.153 + Unit("0.047:ul")
+        elif v <= Unit("5:ul"):
+            return v * 1.048 + Unit("0.31:ul")
+        elif v <= Unit("10:ul"):
+            return v * 1.042 + Unit("0.34:ul")
+        elif v <= Unit("15:ul"):
+            return v * 1.148 - Unit("0.72:ul")
+        else:
+            return v * 1.148 - Unit("0.72:ul")
+
     if pre_buffer:
         pre_buffer = Unit(pre_buffer)
     else:
@@ -1507,6 +1516,7 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
     following = True
 
     # Intepret old `pipette_tools` builders
+    calibrated_vol = None
     if aspirate_source:
         for k, v in aspirate_source.items():
             if k == "aspirate_speed":
@@ -1535,6 +1545,9 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
         z_pos_dict.pop("detection_duration", None)
 
     tip_z = z_position_builder(**z_pos_dict) if z_pos_dict else None
+
+    if not calibrated_vol:
+        calibrated_vol = get_cal_vol(volume)
 
     pipette_params = ["aspirate_flowrate", "dispense_flowrate", "pre_buffer",
                       "blowout_buffer", "primer_vol", "calibrated_vol", "tip_z",
