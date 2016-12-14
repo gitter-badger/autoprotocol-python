@@ -565,6 +565,35 @@ class StampTestCase(unittest.TestCase):
         p.stamp(plate_1_96.well(0), plate_2_96.well(0), "10:microliter")
         self.assertTrue(p.instructions[0].op == "liquid_handle")
 
+    def test_new_defaults(self):
+        p = Protocol()
+        plate_1_96 = p.ref("plate_1_96", None, "96-flat", discard=True)
+        plate_2_96 = p.ref("plate_2_96", None, "96-flat", discard=True)
+        p.stamp(plate_1_96.well(0), plate_2_96.well(0), "10:microliter",
+                new_defaults=False)
+        p.stamp(plate_1_96.well(0), plate_2_96.well(0), "10:microliter",
+                new_defaults=True)
+        self.assertTrue(len(p.instructions), 2)
+        # For now, aspirates are not affected by new defaults
+        self.assertEqual(p.instructions[0].locations[0],
+                         p.instructions[1].locations[0])
+        # Dispenses currently differ according to following and blowout position
+        old_transports = p.instructions[0].locations[0]["transports"]
+        new_transports = p.instructions[1].locations[1]["transports"]
+        self.assertEqual(old_transports[1]["mode_params"]["tip_position"][
+                             "position_z"]["reference"],
+                         "well_bottom")
+        self.assertEqual(new_transports[1]["mode_params"]["tip_position"][
+                             "position_z"]["reference"],
+                         "liquid_surface")
+        self.assertEqual(old_transports[2]["mode_params"]["tip_position"][
+                             "position_z"]["reference"],
+                         "preceding_position")
+        self.assertEqual(new_transports[2]["mode_params"]["tip_position"][
+                             "position_z"]["reference"],
+                         "well_top")
+
+
     def test_volume_tracking(self):
         p = Protocol()
         plate_96 = p.ref("plate_96", None, "96-pcr", discard=True)
@@ -852,11 +881,11 @@ class StampTestCase(unittest.TestCase):
         self.assertEqual(2, len(p.instructions))
         self.assertEqual(
             Unit(148, 'microliter'),
-            p.instructions[0].locations[1]['transports'][-1]['volume']
+            p.instructions[0].locations[1]['transports'][1]['volume']
         )
         self.assertEqual(
             Unit(148, 'microliter'),
-            p.instructions[1].locations[1]['transports'][-1]['volume']
+            p.instructions[1].locations[1]['transports'][1]['volume']
         )
 
     def test_one_source(self):

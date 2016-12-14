@@ -1865,10 +1865,8 @@ class Protocol(object):
             if c < 0 or c > src_col_count or c > dest_col_count:
                 raise ValueError("Columns given exceed plate dimensions.")
 
-            src_row_count = (s.container.container_type.well_count //
-                             src_col_count)
-            dest_row_count = (d.container.container_type.well_count //
-                              dest_col_count)
+            src_row_count = s.container.container_type.row_count()
+            dest_row_count = d.container.container_type.row_count()
             if r < 0 or r > src_row_count or r > dest_row_count:
                 raise ValueError("Rows given exceed plate dimensions.")
 

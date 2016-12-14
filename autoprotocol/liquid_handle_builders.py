@@ -180,7 +180,8 @@ def z_position_builder(reference=None, offset=None,
 
 def mix_transports_helper(volume=Unit("50:microliter"),
                           speed=Unit("100:microliter/second"),
-                          repetitions=10):
+                          repetitions=10,
+                          move_z=True):
     """
     Helper function for creating mix transports
 
@@ -192,23 +193,27 @@ def mix_transports_helper(volume=Unit("50:microliter"),
         flowrate of liquid during mixing
     repetitions : int, optional
         number of times to aspirate and expel liquid during mixing
+    move_z: bool, optional
+        whether to move to default-z position (well_bottom) first, or to
+        begin mixing from wherever the preceding position is
 
     Return
     ------
     Mix transports: List
     """
     mix_list = []
-    mix_list += [(
-        transport_builder(
-            mode_params=mode_params_builder(
-                tip_z=z_position_builder(
-                    reference="well_bottom",
-                    offset=Unit("1:mm")
+    if move_z:
+        mix_list += [(
+            transport_builder(
+                mode_params=mode_params_builder(
+                    tip_z=z_position_builder(
+                        reference="well_bottom",
+                        offset=Unit("1:mm")
+                    )
                 )
             )
-        )
-    )]
-    mix_vol = Unit(volume) / 2
+        )]
+    mix_vol = Unit(volume)
     mix_list += (
         [
             transport_builder(
@@ -362,6 +367,11 @@ def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
     dispense_transport_list = []
 
     # Move to dispense position
+    if not tip_z:
+        tip_z = z_position_builder(
+            reference="well_bottom",
+            offset=Unit("1:mm")
+        )
     dispense_transport_list += [
         transport_builder(
             mode_params=mode_params_builder(
@@ -392,58 +402,34 @@ def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
 
     # Mix-after
     if mix_after:
-        dispense_transport_list += [
-            transport_builder(
-                mode_params=mode_params_builder(
-                    tip_z=z_position_builder(
-                        reference="well_bottom",
-                        offset=Unit("1:mm")
-                    )
-                )
-            )
-        ]
         mix_vol = Unit(mix_vol or (volume / 2))
-        dispense_transport_list += (
-            [
-                transport_builder(
-                    volume=-mix_vol,
-                    x_calibrated_volume=-mix_vol,
-                    flowrate=flowrate_builder(
-                        mix_speed or "100:microliter/second"),
-                    mode_params=mode_params_builder(
-                        tip_z=z_position_builder(
-                            reference="preceding_position"
-                        )
-                    )
-                ),
-                transport_builder(
-                    volume=mix_vol,
-                    x_calibrated_volume=mix_vol,
-                    flowrate=flowrate_builder(
-                        mix_speed or "100:microliter/second"),
-                    mode_params=mode_params_builder(
-                        tip_z=z_position_builder(
-                            reference="preceding_position"
-                        )
-                    )
-                )
-            ] * (repetitions or 10)
-        )
+        dispense_transport_list += mix_transports_helper(mix_vol, mix_speed,
+                                                         repetitions)
 
-    # TODO: currently replicating original behavior, MUST change location
-    # of blowout (maybe a tip touch :) )
-    # Dispense Pre-Buffer
+    # Blowout pre_buffer
     if blowout_buffer and pre_buffer > Unit("0:uL"):
-        dispense_transport_list += [
-            transport_builder(
-                mode_params=mode_params_builder(
-                    tip_z=z_position_builder(
-                        reference="well_top",
-                        offset=Unit("-2:mm")
-                    ),
+        if new_defaults:
+            dispense_transport_list += [
+                transport_builder(
+                    mode_params=mode_params_builder(
+                        tip_z=z_position_builder(
+                            reference="well_top",
+                            offset=Unit("-2:mm")
+                        ),
+                    )
                 )
-            )
-        ]
+            ]
+        else:
+            dispense_transport_list += [
+                transport_builder(
+                    mode_params=mode_params_builder(
+                        tip_z=z_position_builder(
+                            reference="well_bottom",
+                            offset=Unit("1:mm")
+                        ),
+                    )
+                )
+            ]
         dispense_transport_list += [(
             transport_builder(
                 x_calibrated_volume=pre_buffer,
@@ -638,32 +624,9 @@ def stamp_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
     # Mix-before
     if mix_before:
         mix_vol = Unit(mix_vol or (volume / 2))
-        aspirate_transport_list += (
-            [
-                transport_builder(
-                    volume=-mix_vol,
-                    x_calibrated_volume=-mix_vol,
-                    flowrate=flowrate_builder(
-                        mix_speed or "100:microliter/second"),
-                    mode_params=mode_params_builder(
-                        tip_z=z_position_builder(
-                            reference="preceding_position"
-                        )
-                    )
-                ),
-                transport_builder(
-                    volume=mix_vol,
-                    x_calibrated_volume=mix_vol,
-                    flowrate=flowrate_builder(
-                        mix_speed or "100:microliter/second"),
-                    mode_params=mode_params_builder(
-                        tip_z=z_position_builder(
-                            reference="preceding_position"
-                        )
-                    )
-                )
-            ] * (repetitions or 10)
-        )
+        aspirate_transport_list += mix_transports_helper(mix_vol, mix_speed,
+                                                         repetitions,
+                                                         move_z=False)
 
     # Aspirate with primer + disposal vol
     if not primer_vol:
@@ -1512,8 +1475,8 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
         "reference": "well_bottom",
         "offset": Unit("1:mm"),
     }
-    # Following is true by default
-    following = True
+    # Following is true by default if new_defaults
+    following = True if new_defaults else False
 
     # Intepret old `pipette_tools` builders
     calibrated_vol = None

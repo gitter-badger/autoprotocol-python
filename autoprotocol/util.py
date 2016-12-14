@@ -87,7 +87,7 @@ def quad_num_to_ind(q, human=False):
 def check_valid_origin(origin, stamp_type, columns, rows, shape_format="SBS96"):
     """
     Check if selected well is a valid origin destination for the given plate
-    Assumption: SBS formatted plates and 96-tip layout
+    and shape_format
     """
     robotized_origin = origin.index
     well_count = origin.container.container_type.well_count
@@ -117,13 +117,13 @@ def check_valid_origin(origin, stamp_type, columns, rows, shape_format="SBS96"):
         if shape_format == "SBS96":
             if stamp_type == "full":
                 if robotized_origin not in [0, 1, 24, 25]:
-                    raise ValueError("For full 384-well transfers, origin has "
-                                     "to be well 0, 1, 24 or 25.")
+                    raise ValueError("For full 384-well transfers with SBS96, "
+                                     "origin has to be well 0, 1, 24 or 25.")
             elif stamp_type == "row":
                 if (robotized_origin % col_count) not in [0, 1] or (
                     robotized_origin >= ((row_count - ((
                         rows - 1) * 2)) * col_count)):
-                    raise ValueError("For row transfers, origin"
+                    raise ValueError("For row transfers with SBS96, origin"
                                      "has to be specified within the left "
                                      "two columns and not more than allowed by "
                                      "shape.")
@@ -132,26 +132,26 @@ def check_valid_origin(origin, stamp_type, columns, rows, shape_format="SBS96"):
                     robotized_origin < 0) or (
                     robotized_origin % col_count >= (
                         col_count - ((columns - 1) * 2))):
-                    raise ValueError("For column transfers, origin "
+                    raise ValueError("For column transfers with SBS96, origin "
                                      "has to be specified within the top "
                                      "two columns and not more than allowed by "
                                      "shape.")
         elif shape_format == "SBS384":
             if stamp_type == "full":
                 if robotized_origin != 0:
-                    raise ValueError("For full 96-well transfers, origin has "
+                    raise ValueError("For full 384-well transfers, origin has "
                                      "to be well 0.")
             elif stamp_type == "row":
                 if (robotized_origin % col_count) != 0 or robotized_origin > (
                             (row_count - rows) * col_count):
-                    raise ValueError("For row transfers, origin "
+                    raise ValueError("For row transfers with SBS384, origin "
                                      "has to be specified within the left "
                                      "column and not more than allowed by "
                                      "shape.")
             else:
                 if robotized_origin > (col_count - columns) or \
                                 robotized_origin < 0:
-                    raise ValueError("For column transfers, origin "
+                    raise ValueError("For column transfers with SBS384, origin "
                                      "has to be specified within the top "
                                      "column and not more than allowed by "
                                      "shape.")
