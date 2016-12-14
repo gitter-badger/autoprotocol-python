@@ -181,6 +181,7 @@ def z_position_builder(reference=None, offset=None,
 def mix_transports_helper(volume=Unit("50:microliter"),
                           speed=Unit("100:microliter/second"),
                           repetitions=10,
+                          new_defaults=None,
                           move_z=True):
     """
     Helper function for creating mix transports
@@ -196,6 +197,10 @@ def mix_transports_helper(volume=Unit("50:microliter"),
     move_z: bool, optional
         whether to move to default-z position (well_bottom) first, or to
         begin mixing from wherever the preceding position is
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
 
     Return
     ------
@@ -669,7 +674,7 @@ def old_xfer_asp_transports(volume, aspirate_speed=None, dispense_speed=None,
                             aspirate_source=None, dispense_target=None,
                             pre_buffer=None, disposal_vol=None,
                             transit_vol=None, blowout_buffer=None,
-                            **mix_kwargs):
+                            new_defaults=None, **mix_kwargs):
     """
     Helper function for recreating aspirate behavior using transports
 
@@ -719,6 +724,10 @@ def old_xfer_asp_transports(volume, aspirate_speed=None, dispense_speed=None,
     blowout_buffer : bool, optional
         If true the operation will dispense the pre_buffer along with the
         dispense volume. Cannot be true if disposal_vol is specified.
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
 
     Returns
     -------
@@ -746,7 +755,7 @@ def xfer_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
                     disposal_vol=None, transit_vol=None, tip_z=None,
                     calibrated_vol=None, primer_vol=None,
                     following=None, mix_before=None, mix_speed=None,
-                    repetitions=None, mix_vol=None):
+                    repetitions=None, mix_vol=None, new_defaults=None):
     """
     Helper function for recreating similar transport behavior for aspirates.
     Note that volumes are not treated in the exact same manner, which may
@@ -786,6 +795,10 @@ def xfer_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
         Number of mixing repetitions
     mix_vol: Unit
         Volume of mix after dispensing
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
 
     Returns
     -------
@@ -930,7 +943,7 @@ def old_xfer_dsp_transports(volume, aspirate_speed=None, dispense_speed=None,
                             aspirate_source=None, dispense_target=None,
                             pre_buffer=None, disposal_vol=None,
                             transit_vol=None, blowout_buffer=None,
-                            **mix_kwargs):
+                            new_defaults=None, **mix_kwargs):
     """
     Helper function for recreating dispense behavior using transports
 
@@ -980,6 +993,10 @@ def old_xfer_dsp_transports(volume, aspirate_speed=None, dispense_speed=None,
     blowout_buffer : bool, optional
         If true the operation will dispense the pre_buffer along with the
         dispense volume. Cannot be true if disposal_vol is specified.
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
 
     Returns
     -------
@@ -1007,7 +1024,7 @@ def xfer_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
                     blowout_buffer=None, tip_z=None,
                     following=None, calibrated_vol=None,
                     mix_speed=None, repetitions=None,
-                    mix_vol=None, mix_after=None):
+                    mix_vol=None, mix_after=None, new_defaults=None):
     """
     Helper function for creating dispense behavior using transports
 
@@ -1047,6 +1064,11 @@ def xfer_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
         Number of mixing repetitions
     mix_vol: Unit
         Volume of mix after dispensing
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
+
     Returns
     -------
     Dispense transports : List
@@ -1138,10 +1160,29 @@ def xfer_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
             ] * (repetitions or 10)
         )
 
-    # TODO: currently replicating original behavior, MUST change location
-    # of blowout (maybe a tip touch :) )
-    # Dispense Pre-Buffer
     if blowout_buffer and pre_buffer > Unit("0:uL"):
+        if new_defaults:
+            dispense_transport_list += [
+                transport_builder(
+                    mode_params=mode_params_builder(
+                        tip_z=z_position_builder(
+                            reference="well_top",
+                            offset=Unit("-2:mm")
+                        ),
+                    )
+                )
+            ]
+        else:
+            dispense_transport_list += [
+                transport_builder(
+                    mode_params=mode_params_builder(
+                        tip_z=z_position_builder(
+                            reference="well_bottom",
+                            offset=Unit("1:mm")
+                        ),
+                    )
+                )
+            ]
         dispense_transport_list += [(
             transport_builder(
                 x_calibrated_volume=pre_buffer,
@@ -1161,7 +1202,8 @@ def parse_xfer_params(volume, aspirate_speed=None, dispense_speed=None,
                       aspirate_source=None, dispense_target=None,
                       pre_buffer=None, disposal_vol=None, transit_vol=None,
                       blowout_buffer=None, mix_before=None, mix_after=None,
-                      mix_vol=None, repetitions=None, flowrate=None):
+                      mix_vol=None, repetitions=None, flowrate=None,
+                      new_defaults=None):
     """
     Helper function for mapping old pipetting parameters to transport
     specific parameters
@@ -1212,6 +1254,10 @@ def parse_xfer_params(volume, aspirate_speed=None, dispense_speed=None,
     blowout_buffer : bool, optional
         If true the operation will dispense the pre_buffer along with the
         dispense volume. Cannot be true if disposal_vol is specified.
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
     """
     if aspirate_source and dispense_target:
         raise ValueError("parse_xfer_params only supports either "
@@ -1338,7 +1384,7 @@ def parse_xfer_params(volume, aspirate_speed=None, dispense_speed=None,
                       "disposal_vol", "transit_vol", "blowout_buffer",
                       "primer_vol", "calibrated_vol", "tip_z", "following",
                       "flowrate", "mix_before", "mix_after", "repetitions",
-                      "mix_vol"]
+                      "mix_vol", "new_defaults"]
 
     arg_list = list(locals().items())
     pipette_args = {k: v for k, v in arg_list if k in pipette_params and v is

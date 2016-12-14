@@ -188,6 +188,33 @@ class DistributeTestCase(unittest.TestCase):
                      "5:microliter")
         self.assertTrue(p.instructions[0].op == "liquid_handle")
 
+    def test_new_defaults(self):
+        p = Protocol()
+        c = p.ref("test", None, "96-flat", discard=True)
+        p.distribute(c.well(0).set_volume("20:microliter"),
+                     c.well(1),
+                     "5:microliter",
+                     blowout_buffer=True,
+                     new_defaults=False)
+        p.distribute(c.well(0).set_volume("20:microliter"),
+                     c.well(1),
+                     "5:microliter",
+                     blowout_buffer=True,
+                     new_defaults=True)
+        self.assertTrue(len(p.instructions), 2)
+        # For now, aspirates are not affected by new defaults
+        self.assertEqual(p.instructions[0].locations[0],
+                         p.instructions[1].locations[0])
+        # Dispenses currently differ for blowout position
+        old_transports = p.instructions[0].locations[1]["transports"]
+        new_transports = p.instructions[1].locations[1]["transports"]
+        self.assertEqual(old_transports[-2]["mode_params"]["tip_position"][
+                             "position_z"]["reference"],
+                         "well_bottom")
+        self.assertEqual(new_transports[-2]["mode_params"]["tip_position"][
+                             "position_z"]["reference"],
+                         "well_top")
+
     def test_distribute_one_well(self):
         p = Protocol()
         c = p.ref("test", None, "96-flat", discard=True)
@@ -250,12 +277,12 @@ class DistributeTestCase(unittest.TestCase):
         p.distribute(
             c.well(0).set_volume("100:microliter"), c.well(1), "200:nanoliter")
         self.assertTrue(str(
-            p.instructions[0].locations[1][0]["transports"][-1]["volume"]) ==
+            p.instructions[0].locations[1]["transports"][-1]["volume"]) ==
                         "0.2:microliter")
         p.distribute(c.well(2).set_volume("100:microliter"), c.well(
             3), ".1:milliliter", new_group=True)
         self.assertTrue(str(
-            p.instructions[1].locations[1][0]["transports"][-1]["volume"]) ==
+            p.instructions[1].locations[1]["transports"][-1]["volume"]) ==
                         "100.0:microliter")
 
     def test_dispense_speed(self):
@@ -264,13 +291,13 @@ class DistributeTestCase(unittest.TestCase):
         p.distribute(
             c.well(0).set_volume("100:microliter"), c.well(1), "2:microliter",
             dispense_speed="150:microliter/second")
-        self.assertTrue(str(p.instructions[0].locations[1][0]["transports"]
+        self.assertTrue(str(p.instructions[0].locations[1]["transports"]
                             [2]["flowrate"]["target"]) ==
                         "150:microliter/second")
         p.distribute(
             c.well(0), c.well(1), "2:microliter",
             distribute_target={"dispense_speed": "200:microliter/second"})
-        self.assertTrue(str(p.instructions[1].locations[1][0]["transports"]
+        self.assertTrue(str(p.instructions[1].locations[1]["transports"]
                             [2]["flowrate"]["target"]) ==
                         "200:microliter/second")
 
@@ -281,6 +308,27 @@ class TransferTestCase(unittest.TestCase):
         c = p.ref("test", None, "96-flat", discard=True)
         p.transfer(c.well(0), c.well(1), "20:microliter")
         self.assertTrue(p.instructions[0].op == "liquid_handle")
+
+    def test_new_defaults(self):
+        p = Protocol()
+        c = p.ref("test", None, "96-flat", discard=True)
+        p.transfer(c.well(0), c.well(1), "20:microliter",
+                   blowout_buffer=True, new_defaults=False)
+        p.transfer(c.well(0), c.well(1), "20:microliter",
+                   blowout_buffer=True, new_defaults=True)
+        self.assertTrue(len(p.instructions), 2)
+        # For now, aspirates are not affected by new defaults
+        self.assertEqual(p.instructions[0].locations[0],
+                         p.instructions[1].locations[0])
+        # Dispenses currently differ for blowout position
+        old_transports = p.instructions[0].locations[1]["transports"]
+        new_transports = p.instructions[1].locations[1]["transports"]
+        self.assertEqual(old_transports[-2]["mode_params"]["tip_position"][
+                             "position_z"]["reference"],
+                         "well_bottom")
+        self.assertEqual(new_transports[-2]["mode_params"]["tip_position"][
+                             "position_z"]["reference"],
+                         "well_top")
 
     def test_single_transfer(self):
         p = Protocol()
@@ -537,6 +585,27 @@ class ConsolidateTestCase(unittest.TestCase):
         p.consolidate(c.wells_from(0, 3), c.well(4), "10:microliter")
         self.assertTrue(p.instructions[0].op == "liquid_handle")
 
+    def test_new_defaults(self):
+        p = Protocol()
+        c = p.ref("test", None, "96-flat", discard=True)
+        p.consolidate(c.wells_from(0, 3), c.well(4), "10:microliter",
+                     blowout_buffer=True, new_defaults=False)
+        p.consolidate(c.wells_from(0, 3), c.well(4), "10:microliter",
+                     blowout_buffer=True, new_defaults=True)
+        self.assertTrue(len(p.instructions), 2)
+        # For now, aspirates are not affected by new defaults
+        self.assertEqual(p.instructions[0].locations[0],
+                         p.instructions[1].locations[0])
+        # Dispenses currently differ for blowout position
+        old_transports = p.instructions[0].locations[-1]["transports"]
+        new_transports = p.instructions[1].locations[-1]["transports"]
+        self.assertEqual(old_transports[-2]["mode_params"]["tip_position"][
+                             "position_z"]["reference"],
+                         "well_bottom")
+        self.assertEqual(new_transports[-2]["mode_params"]["tip_position"][
+                             "position_z"]["reference"],
+                         "well_top")
+
     def test_multiple_sources(self):
         p = Protocol()
         c = p.ref("test", None, "96-flat", discard=True)
@@ -578,21 +647,20 @@ class StampTestCase(unittest.TestCase):
         self.assertEqual(p.instructions[0].locations[0],
                          p.instructions[1].locations[0])
         # Dispenses currently differ according to following and blowout position
-        old_transports = p.instructions[0].locations[0]["transports"]
+        old_transports = p.instructions[0].locations[1]["transports"]
         new_transports = p.instructions[1].locations[1]["transports"]
         self.assertEqual(old_transports[1]["mode_params"]["tip_position"][
                              "position_z"]["reference"],
-                         "well_bottom")
+                         "preceding_position")
         self.assertEqual(new_transports[1]["mode_params"]["tip_position"][
                              "position_z"]["reference"],
                          "liquid_surface")
         self.assertEqual(old_transports[2]["mode_params"]["tip_position"][
                              "position_z"]["reference"],
-                         "preceding_position")
+                         "well_bottom")
         self.assertEqual(new_transports[2]["mode_params"]["tip_position"][
                              "position_z"]["reference"],
                          "well_top")
-
 
     def test_volume_tracking(self):
         p = Protocol()
@@ -1405,6 +1473,17 @@ class MixTestCase(unittest.TestCase):
         p.mix(w, "5:microliter")
         self.assertEqual(Unit(20, "microliter"), w.volume)
         self.assertTrue(p.instructions[-1].op == "liquid_handle")
+
+    def test_new_defaults(self):
+        p = Protocol()
+        w = p.ref("test", None, "micro-1.5",
+                  discard=True).well(0).set_volume("20:microliter")
+        p.mix(w, "5:microliter", new_defaults=False)
+        p.mix(w, "5:microliter", new_defaults=True)
+        self.assertTrue(len(p.instructions), 2)
+        # For now, mixes are not affected by new defaults
+        self.assertEqual(p.instructions[0].locations,
+                         p.instructions[1].locations)
 
     def test_mix_one_tip(self):
         p = Protocol()

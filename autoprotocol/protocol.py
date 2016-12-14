@@ -670,7 +670,7 @@ class Protocol(object):
                    aspirate_source=None, dispense_speed=None,
                    distribute_target=None, pre_buffer=None, disposal_vol=None,
                    transit_vol=None, blowout_buffer=None, tip_type=None,
-                   new_group=False):
+                   new_group=False, new_defaults=False):
         """
         Distribute liquid from source well(s) to destination wells(s).
 
@@ -759,6 +759,10 @@ class Protocol(object):
             If true the operation will dispense the pre_buffer along with the
             dispense volume.
             Cannot be true if disposal_vol is specified.
+        new_defaults: bool, optional
+            Specifies if recommended pipetting defaults will be used.
+            This is false by default to maintain backwards compatibility and
+            produce exactly the same behavior as before
 
         Raises
         ------
@@ -793,13 +797,13 @@ class Protocol(object):
             volume = [Unit.fromstring(volume)] * len(dests.wells)
 
         # Initialize instructions
-        def location_helper(v, s=None, d=None):
+        def location_helper(v, s=None, d=None, new_defaults=False):
             pipette_params = ["mix_after", "mix_vol", "flowrate",
                               "repetitions",
                               "aspirate_speed", "dispense_speed",
                               "aspirate_source", "dispense_target",
                               "pre_buffer", "transit_vol", "blowout_buffer",
-                              "tip_type"]
+                              "tip_type", "new_defaults"]
             if "distribute_target" in arg_dict:
                 distribute_target = arg_dict["distribute_target"]
                 if "dispense_speed" in distribute_target:
@@ -861,7 +865,7 @@ class Protocol(object):
             v = v.to("ul")
             if idx == 0:
                 self._remove_cover(src.container, "distribute from")
-                locations.append(location_helper(v * acc_vols[0], src))
+                locations += location_helper(v * acc_vols[0], src)
                 last_idx = acc_vols[0]
                 acc_vols = acc_vols[1:]
             elif len(acc_vols) != 0 and idx == acc_vols[0]:
@@ -872,7 +876,7 @@ class Protocol(object):
                 last_idx = acc_vols[0]
                 acc_vols = acc_vols[1:]
             self._remove_cover(d.container, "distribute into")
-            locations.append(location_helper(v, s=None, d=d))
+            locations += location_helper(v, s=None, d=d)
 
         self.append(LiquidHandle(locations, tip_type=tip_type))
 
@@ -880,7 +884,8 @@ class Protocol(object):
                  aspirate_speed=None, dispense_speed=None,
                  aspirate_source=None, dispense_target=None, pre_buffer=None,
                  disposal_vol=None, transit_vol=None, blowout_buffer=None,
-                 tip_type=None, new_group=False, **mix_kwargs):
+                 tip_type=None, new_group=False, new_defaults=False,
+                 **mix_kwargs):
         """
         Transfer liquid from one specific well to another.  A new pipette tip
         is used between each transfer step unless the "one_tip" parameter
@@ -1002,6 +1007,10 @@ class Protocol(object):
             dispense volume. Cannot be true if disposal_vol is specified.
         tip_type : str, optional
             Type of tip to be used for the transfer operation.
+        new_defaults: bool, optional
+            Specifies if recommended pipetting defaults will be used.
+            This is false by default to maintain backwards compatibility and
+            produce exactly the same behavior as before
         new_group : bool, optional
 
         Raises
@@ -1120,7 +1129,7 @@ class Protocol(object):
                                    "must have a volume attribute (aliquot) "
                                    "associated with it.")
 
-        def location_helper(src_well, dest_well, xfer_vol):
+        def location_helper(src_well, dest_well, xfer_vol, new_defaults=False):
             # Volume accounting
             if dest_well.volume:
                 dest_well.volume += xfer_vol
@@ -1140,7 +1149,7 @@ class Protocol(object):
             pipette_params = ["aspirate_speed", "dispense_speed",
                               "aspirate_source", "dispense_target",
                               "pre_buffer", "disposal_vol", "transit_vol",
-                              "blowout_buffer"]
+                              "blowout_buffer", "new_defaults"]
             pipette_args = {param: arg_dict[param] for param in pipette_params
                             if param in arg_dict}
             pipette_args.update(mix_kwargs)
@@ -1183,9 +1192,10 @@ class Protocol(object):
                     mix_after=False, mix_vol=None,
                     flowrate="100:microliter/second", repetitions=10,
                     aspirate_speed=None, dispense_speed=None,
-                    aspirate_source=None,
-                    dispense_target=None, pre_buffer=None, transit_vol=None,
-                    blowout_buffer=None, tip_type=None, new_group=False):
+                    aspirate_source=None, dispense_target=None,
+                    pre_buffer=None, transit_vol=None,
+                    blowout_buffer=None, tip_type=None,
+                    new_group=False, new_defaults=False):
         """
         Aspirates from each source well, in order, the volume specified, then
         dispenses the sum volume into the target well. Be aware that the same
@@ -1245,6 +1255,10 @@ class Protocol(object):
         blowout_buffer : bool, optional
             If true the operation will dispense the pre_buffer along with the
             dispense volume cannot be true if disposal_vol is specified.
+        new_defaults: bool, optional
+            Specifies if recommended pipetting defaults will be used.
+            This is false by default to maintain backwards compatibility and
+            produce exactly the same behavior as before
 
         Raises
         ------
@@ -1279,12 +1293,12 @@ class Protocol(object):
             volumes = [Unit.fromstring(volumes).to("ul")] * len(sources)
 
         # Initialize instructions
-        def location_helper(volume, s=None, d=None):
+        def location_helper(volume, s=None, d=None, new_defaults=False):
             pipette_params = ["mix_after", "mix_vol", "flowrate", "repetitions",
                               "aspirate_speed", "dispense_speed",
                               "aspirate_source", "dispense_target",
                               "pre_buffer", "transit_vol", "blowout_buffer",
-                              "tip_type"]
+                              "tip_type", "new_defaults"]
             pipette_args = {param: arg_dict[param] for param in pipette_params
                             if param in arg_dict}
 
@@ -1314,19 +1328,19 @@ class Protocol(object):
         for s, v in zip(sources, volumes):
             self._remove_cover(s.container, "consolidate from")
             if acc_vol + v <= _MAX_SINGLE_TIP_CAPACITY:
-                locations.append(location_helper(v, s))
+                locations += location_helper(v, s)
             elif allow_carryover:
                 # If allow_carryover and overflow, first dispense
-                locations.append(location_helper(acc_vol, s=None, d=dest))
+                locations += location_helper(acc_vol, s=None, d=dest)
                 acc_vol = Unit("0:microliter")
-                locations.append(location_helper(v, s))
+                locations += location_helper(v, s)
             else:
                 raise ValueError("Volume specified is greater than the maximum "
                                  "tip capacity. Please specify `allow_carryover"
                                  "=True`")
             acc_vol += v
 
-        locations.append(location_helper(acc_vol, s=None, d=dest))
+        locations += location_helper(acc_vol, s=None, d=dest)
         self.append(LiquidHandle(locations, tip_type=tip_type))
 
     def acoustic_transfer(self, source, dest, volume, one_source=False,
@@ -2531,7 +2545,7 @@ class Protocol(object):
         self.instructions.append(SangerSeq(cont, wells, dataref, type, primer))
 
     def mix(self, well, volume="50:microliter", speed="100:microliter/second",
-            repetitions=10, one_tip=False):
+            repetitions=10, one_tip=False, new_defaults=False):
         """
         Mix specified well using a new pipette tip
 
@@ -2564,7 +2578,10 @@ class Protocol(object):
             number of times to aspirate and expel liquid during mixing
         one_tip : bool
             mix all wells with a single tip
-
+        new_defaults: bool, optional
+            Specifies if recommended pipetting defaults will be used.
+            This is false by default to maintain backwards compatibility and
+            produce exactly the same behavior as before
         """
         # Check valid well inputs
         if not is_valid_well(well):
@@ -2577,7 +2594,8 @@ class Protocol(object):
             self._remove_cover(w.container, "mix")
             locations += [location_builder(
                 location=w,
-                transports=mix_transports_helper(volume, speed, repetitions)
+                transports=mix_transports_helper(volume, speed, repetitions,
+                                                 new_defaults)
             )]
             if not one_tip:
                 self.append(LiquidHandle(locations))
@@ -2586,7 +2604,8 @@ class Protocol(object):
         if one_tip:
             self.append(LiquidHandle(locations))
 
-    def dispense(self, ref, reagent, columns, speed_percentage=None, is_resource_id=False):
+    def dispense(self, ref, reagent, columns, speed_percentage=None,
+                 is_resource_id=False):
         """
         Dispense specified reagent to specified columns.
 
