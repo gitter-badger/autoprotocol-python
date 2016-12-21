@@ -35,5 +35,7 @@ _template/
 html/
 doctrees/
 .cache
-
+.eggs/
+.idea/
+.python-version
 docs/make.bat

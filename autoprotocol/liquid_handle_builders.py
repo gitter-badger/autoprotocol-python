@@ -1,23 +1,36 @@
 from .unit import Unit
+from autoprotocol import Well
 
 _MAX_SINGLE_TIP_CAPACITY = Unit(900, "microliter")
+_SUPPORTED_SHAPES = ["SBS96", "SBS384"]
 
 
 def shape_builder(rows=1, columns=1, format="SBS96"):
     """
+    Helper function for building a shape dictionary
+
     Parameters
     ----------
-    rows: Int
+    rows: Int, optional
         Number of rows to be concurrently transferred
-    columns: Int
+    columns: Int, optional
         Number of columns to be concurrently transferred
-    format: String
-        Plate format in String form
+    format: String, optional
+        Plate format in String form. Example formats are "SBS96" and "SBS384"
     Returns
     -------
     Shape parameters: Dictionary
     """
-    # TODO: Add in checks on inputs. Possibly fill in defaults?
+    if not isinstance(rows, int) or not isinstance(columns, int):
+        raise TypeError("Rows/columns have to be of type integer")
+    if format not in _SUPPORTED_SHAPES:
+        raise ValueError("Invalid shape given. Shape has to be in {}".format(
+            _SUPPORTED_SHAPES
+        ))
+    if (format == "SBS96" and (rows > 8 or columns > 12) or
+            format == "SBS384" and (rows > 16 or columns > 24)):
+        raise ValueError("Number of rows/columns exceed the defined format")
+
     arg_list = list(locals().items())
     arg_dict = {k: v for k, v in arg_list if v}
     return arg_dict
@@ -26,16 +39,44 @@ def shape_builder(rows=1, columns=1, format="SBS96"):
 def location_builder(location=None, transports=None, cycles=None,
                      x_object_volume=None):
     """
+    Helper function for building a location dictionary
+
     Parameters
     ----------
-    location: Well, str
+    location: Well, str, optional
+        Location refers to the well location where the transports will be
+        carried out
     transports: List[transport_builder()]
-    cycles: Int
+        Transports refer to the list of transports that will be carried out
+         in the specified location
+    cycles: Int, optional
         Number of cycles to repeat stated transports
-    x_object_volume: Unit
-        Volume which we think is present in the aliquot
+    x_object_volume: Unit, optional
+        Volume which we think is present in the aliquot. This will be used
+        when the detection method "tracked" is used
+
+    Returns
+    -------
+    Location Parameters: Dictionary
     """
-    # TODO: Add in checks on inputs. Possibly fill in defaults?
+    if cycles and not isinstance(cycles, int):
+        raise TypeError("Cycles {} is not of type int".format(cycles))
+    if transports is not None and not isinstance(transports, list):
+        raise TypeError("Transports {} is not of type list".format(transports))
+    if location and not isinstance(location, Well) and \
+            not isinstance(location, str):
+        raise TypeError("Location {} is not of type str or Well".format(
+            location))
+    if x_object_volume and not isinstance(x_object_volume, Unit):
+        raise TypeError("x_object_volume {} is not of type Unit".format(
+            x_object_volume
+        ))
+
+    if transports is not None and len(transports) <= 0:
+        raise ValueError("At least one transport has to be defined")
+    if cycles is not None and cycles <= 0:
+        raise ValueError("Cycles have to be positive")
+
     arg_list = list(locals().items())
     # Note: not None checks done since Unit("0:uL") = false
     arg_dict = {k: v for k, v in arg_list if v is not None}
@@ -45,23 +86,40 @@ def location_builder(location=None, transports=None, cycles=None,
 def transport_builder(volume=None, flowrate=None, delay_time=None,
                       mode_params=None, x_calibrated_volume=None):
     """
+    Helper function for building a transport dictionary
+
     Parameters
     ----------
-    volume: Unit
+    volume: Unit, optional
         Volume to be aspirated/dispensed. Positive volume -> Dispense.
         Negative -> Aspirate
-    flowrate: flowrate_builder()
-        Flowrate parameters
-    delay_time: Unit
+    flowrate: flowrate_builder(), optional
+        Flowrate parameters, look at flowrate_builder for more details
+    delay_time: Unit, optional
         Time spent waiting after executing mandrel and pump movement
-    mode_params: mode_params_builder()
-        Mode parameters
-    cycles: Int
-        Number of times to repeat transport
-    x_calibrated_volume: Unit
-        Calibrated volume
+    mode_params: mode_params_builder(), optional
+        Mode parameters, look at mode_params_builder for more details
+    x_calibrated_volume: Unit, optional
+        Calibrated volume, volume which the pump will move
+
+    Returns
+    -------
+    Transport Parameters: Dictionary
     """
-    # TODO: Add in checks on inputs. Possibly fill in defaults?
+    if volume and not isinstance(volume, Unit):
+        raise TypeError("Volume {} is not of type Unit".format(volume))
+    if flowrate and not isinstance(flowrate, dict):
+        raise TypeError("Flowrate {} is not of type dict".format(flowrate))
+    if delay_time and not isinstance(delay_time, Unit):
+        raise TypeError("Delay_time {} is not of type Unit".format(delay_time))
+    if mode_params and not isinstance(mode_params, dict):
+        raise TypeError("Mode Params {} is not of type dict".format(mode_params)
+                        )
+    if x_calibrated_volume and not isinstance(x_calibrated_volume, Unit):
+        raise TypeError("x_calibrated_volume is not of type Unit".format(
+            x_calibrated_volume
+        ))
+
     arg_list = list(locals().items())
     # Note: not None checks done since Unit("0:uL") = false
     arg_dict = {k: v for k, v in arg_list if v is not None}
@@ -71,22 +129,39 @@ def transport_builder(volume=None, flowrate=None, delay_time=None,
 def flowrate_builder(target, initial=None, cutoff=None, x_acceleration=None,
                      x_deceleration=None):
     """
+    Helper function for building a flowrate dictionary
+
     Parameters
     ----------
-    target: Unit
+    target: Unit, str
         Target flowrate
-    initial: Optional[Unit]
+    initial: Unit, optional
         Initial flowrate
-    cutoff: Optional[Unit]
+    cutoff: Unit, optional
         Cutoff flowrate
-    x_acceleration: Optional[Unit]
+    x_acceleration: Unit, optional
         Volumetric acceleration for initial to target
-    x_deceleration: Optional[Unit]
+    x_deceleration: Unit, optional
         Volumetric deceleration for target to cutoff
     Returns
     -------
     Flowrate Parameters: Dictionary
     """
+    if target is not None and not isinstance(target, Unit):
+        raise TypeError("Target {} is not of type Unit".format(target))
+    if initial is not None and not isinstance(initial, Unit):
+        raise TypeError("Initial {} is not of type Unit".format(initial))
+    if cutoff is not None and not isinstance(cutoff, Unit):
+        raise TypeError("Cutoff {} is not of type Unit".format(cutoff))
+    if x_acceleration is not None and not isinstance(x_acceleration, Unit):
+        raise TypeError("Acceleration {} is not of type Unit".format(
+            x_acceleration
+        ))
+    if x_deceleration is not None and not isinstance(x_deceleration, Unit):
+        raise TypeError("Deceleration {} is not of type Unit".format(
+            x_deceleration
+        ))
+
     arg_list = list(locals().items())
     # Note: not None checks done since Unit("0:uL") = false
     arg_dict = {k: v for k, v in arg_list if v is not None}
@@ -95,26 +170,51 @@ def flowrate_builder(target, initial=None, cutoff=None, x_acceleration=None,
 
 def mode_params_builder(liquid_class=None, tip_x=None, tip_y=None, tip_z=None):
     """
+    Helper function for creating transport/tip-movement mode parameters
+
     Parameters
     ----------
-    liquid_class: Optional[str]
+    liquid_class: str, optional
         Accepts only "air" or "default"
-    tip_x: Optional[float]
-        Relative x-position of tip in well in unit square coordinates.
+    tip_x: float, optional
+        Target relative x-position of tip in well in unit square coordinates.
         Defaults to 0
-    tip_y: Optional[float]
-        Relative y-position of tip in well in unit square coordinates.
+    tip_y: float, optional
+        Target relative y-position of tip in well in unit square coordinates.
         Defaults to 0
-    tip_z: Optional[z_position_builder()]
-        Relative z-position of tip in well
+    tip_z: z_position_builder(), optional
+        Target relative z-position of tip in well. Refer to z_position_builder
+        for more details
     Returns
     -------
     Mode Parameters: Dictionary
     """
+    if liquid_class and not isinstance(liquid_class, str):
+        raise TypeError("Liquid class {} is not of type str".format(
+            liquid_class
+        ))
+    if tip_x and not isinstance(tip_x, float) and not isinstance(tip_x, int):
+        raise TypeError("Tip_x {} is not of type float/int".format(
+            tip_x
+        ))
+    if tip_y and not isinstance(tip_y, float) and not isinstance(tip_y, int):
+        raise TypeError("Tip_y {} is not of type float/int".format(
+            tip_y
+        ))
+    if tip_z and not isinstance(tip_z, dict):
+        raise TypeError("Tip_z {} is not of type dict".format(
+            tip_z
+        ))
+
     _liquid_classes = ["air", "default"]
     if liquid_class:
         if liquid_class not in _liquid_classes:
             raise ValueError(liquid_class + " has to be in " + liquid_class)
+    if tip_x and (tip_x > 1 or tip_x < -1):
+        raise ValueError("Tip_x {} has to be in Unit coordinates")
+    if tip_y and (tip_y > 1 or tip_y < -1):
+        raise ValueError("Tip_y {} has to be in Unit coordinates")
+
     mode_params_dict = {k: v for k, v in [("liquid_class", liquid_class)] if v}
     tip_position_dict = {k: v for k, v in [("position_x", tip_x),
                                            ("position_y", tip_y),
@@ -127,44 +227,74 @@ def z_position_builder(reference=None, offset=None,
                        detection_method=None, detection_threshold=None,
                        detection_duration=None, fallback=None):
     """
-    Helper function for creating z_positions
+    Helper function for creating z_positions, which refer to the position in
+    the well where the tip is located
 
     Parameters
     ----------
-    reference: String
+    reference: String, optional
         Must be one of "well_top", "well_bottom", "liquid_surface",
          "preceding_position"
-    offset: Unit
+    offset: Unit, optional
         Offset from reference position
-    detection_method: String
+    detection_method: String, optional
         Must be one of "tracked", "pressure", "capacitance"
-    detection_threshold: Unit
+    detection_threshold: Unit, optional
         The threshold which must be crossed before a positive reading is
         registered.
         This is applicable for capacitance and pressure detection methods
-    detection_duration: Unit
+    detection_duration: Unit, optional
         The contiguous duration where the threshold must be crossed before a
         positive reading is registered.
         This is applicable for pressure detection methods
-    fallback: z_position_builder()
+    fallback: z_position_builder(), optional
         Fallback option which will be used if sensing fails
     Returns
     -------
     Position Z Parameters: Dictionary
     """
-    position_z_dict = {}
     _valid_references = ["well_top", "well_bottom", "liquid_surface",
                          "preceding_position"]
+    _valid_methods = ["tracked", "pressure", "capacitance"]
+
+    if reference and not isinstance(reference, str):
+        raise TypeError("Reference {} is not of type str".format(
+            reference
+        ))
+    if offset and not isinstance(offset, Unit):
+        raise TypeError("Offset {} is not of type Unit".format(
+            offset
+        ))
+    if detection_method and not isinstance(detection_method, str):
+        raise TypeError("Detection_method {} is not of type str".format(
+            detection_method
+        ))
+    if detection_threshold and not isinstance(detection_threshold, Unit):
+        raise TypeError("Detection_threshold {} is not of type Unit".format(
+            detection_threshold
+        ))
+    if fallback and not isinstance(fallback, dict):
+        raise TypeError("Fallback {} is not of type dict".format(
+            fallback
+        ))
+
+    position_z_dict = {}
     if reference:
         position_z_dict = dict(reference=reference)
         if reference not in _valid_references:
-            raise ValueError(reference + " has to be in " + _valid_references)
+            raise ValueError("{} has to be in {}".format(
+                reference, _valid_references
+            ))
     if (detection_duration or detection_threshold) and not detection_method:
         raise ValueError("Detection method is required when specifying "
                          "detection threshold or duration")
     if offset:
         position_z_dict["offset"] = offset
     if detection_method:
+        if detection_method not in _valid_methods:
+            raise ValueError("{} has to be in {}".format(
+                detection_method, _valid_methods
+            ))
         if reference in ["well_top", "well_bottom"]:
             raise ValueError("Detection does not apply for well_top, "
                              "well_botttom references")
@@ -206,6 +336,7 @@ def mix_transports_helper(volume=Unit("50:microliter"),
     ------
     Mix transports: List
     """
+    target_speed = Unit(speed)
     mix_list = []
     if move_z:
         mix_list += [(
@@ -224,7 +355,7 @@ def mix_transports_helper(volume=Unit("50:microliter"),
             transport_builder(
                 volume=-mix_vol,
                 x_calibrated_volume=-mix_vol,
-                flowrate=flowrate_builder(speed),
+                flowrate=flowrate_builder(target_speed),
                 mode_params=mode_params_builder(
                     tip_z=z_position_builder(
                         reference="preceding_position"
@@ -234,7 +365,7 @@ def mix_transports_helper(volume=Unit("50:microliter"),
             transport_builder(
                 volume=mix_vol,
                 x_calibrated_volume=mix_vol,
-                flowrate=flowrate_builder(speed),
+                flowrate=flowrate_builder(target_speed),
                 mode_params=mode_params_builder(
                     tip_z=z_position_builder(
                         reference="preceding_position"
@@ -842,7 +973,7 @@ def xfer_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
                     volume=-mix_vol,
                     x_calibrated_volume=-mix_vol,
                     flowrate=flowrate_builder(
-                        mix_speed or "100:microliter/second"),
+                        mix_speed or Unit("100:microliter/second")),
                     mode_params=mode_params_builder(
                         tip_z=z_position_builder(
                             reference="preceding_position"
@@ -853,7 +984,7 @@ def xfer_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
                     volume=mix_vol,
                     x_calibrated_volume=mix_vol,
                     flowrate=flowrate_builder(
-                        mix_speed or "100:microliter/second"),
+                        mix_speed or Unit("100:microliter/second")),
                     mode_params=mode_params_builder(
                         tip_z=z_position_builder(
                             reference="preceding_position"
@@ -1139,7 +1270,7 @@ def xfer_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
                     volume=-mix_vol,
                     x_calibrated_volume=-mix_vol,
                     flowrate=flowrate_builder(
-                        mix_speed or "100:microliter/second"),
+                        mix_speed or Unit("100:microliter/second")),
                     mode_params=mode_params_builder(
                         tip_z=z_position_builder(
                             reference="preceding_position"
@@ -1150,7 +1281,7 @@ def xfer_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
                     volume=mix_vol,
                     x_calibrated_volume=mix_vol,
                     flowrate=flowrate_builder(
-                        mix_speed or "100:microliter/second"),
+                        mix_speed or Unit("100:microliter/second")),
                     mode_params=mode_params_builder(
                         tip_z=z_position_builder(
                             reference="preceding_position"
@@ -1302,7 +1433,7 @@ def parse_xfer_params(volume, aspirate_speed=None, dispense_speed=None,
             if k == "method" and v == "ll_surface":
                 following = False
             if k == "distance":
-                z_pos_dict["offset"] = v
+                z_pos_dict["offset"] = Unit(v)
             if k in _method_map:
                 z_pos_dict["detection_method"] = _method_map[v]
         return following, z_pos_dict
@@ -1323,10 +1454,10 @@ def parse_xfer_params(volume, aspirate_speed=None, dispense_speed=None,
         transit_vol = old_transit_vol(volume)
 
     if aspirate_speed:
-        aspirate_flowrate = flowrate_builder(aspirate_speed)
+        aspirate_flowrate = flowrate_builder(Unit(aspirate_speed))
 
     if dispense_speed:
-        dispense_flowrate = flowrate_builder(dispense_speed)
+        dispense_flowrate = flowrate_builder(Unit(dispense_speed))
 
     clld_unit = Unit("0.009740:picofarad")
     plld_unit = Unit("0.000109867:psi")
@@ -1344,8 +1475,8 @@ def parse_xfer_params(volume, aspirate_speed=None, dispense_speed=None,
     if aspirate_source:
         for k, v in aspirate_source.items():
             if k == "aspirate_speed":
-                aspirate_flowrate = flowrate_builder(v["max"],
-                                                     initial=v["start"])
+                aspirate_flowrate = flowrate_builder(Unit(v["max"]),
+                                                     initial=Unit(v["start"]))
             calibrated_vol = Unit(v) if k == "volume" else None
             primer_vol = Unit(v) if k == "primer_vol" else None
             if k == "depth":
@@ -1360,8 +1491,8 @@ def parse_xfer_params(volume, aspirate_speed=None, dispense_speed=None,
     if dispense_target:
         for k, v in dispense_target.items():
             if k == "dispense_speed":
-                dispense_flowrate = flowrate_builder(v["max"],
-                                                     initial=v["start"])
+                dispense_flowrate = flowrate_builder(Unit(v["max"]),
+                                                     initial=Unit(v["start"]))
             calibrated_vol = Unit(v) if k == "volume" else None
             if k == "depth":
                 following, tip_z = parse_depth(v)
@@ -1479,7 +1610,7 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
             if k == "method" and v == "ll_surface":
                 following = False
             if k == "distance":
-                z_pos_dict["offset"] = v
+                z_pos_dict["offset"] = Unit(v)
             if k in _method_map:
                 raise ValueError("No detection methods supported for "
                                  "multichannel")
@@ -1511,10 +1642,10 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
         blowout_buffer = True
 
     if aspirate_speed:
-        aspirate_flowrate = flowrate_builder(aspirate_speed)
+        aspirate_flowrate = flowrate_builder(Unit(aspirate_speed))
 
     if dispense_speed:
-        dispense_flowrate = flowrate_builder(dispense_speed)
+        dispense_flowrate = flowrate_builder(Unit(dispense_speed))
 
     # TCLE fallback defaults to 1:mm above well_bottom
     z_pos_dict = {
@@ -1529,8 +1660,8 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
     if aspirate_source:
         for k, v in aspirate_source.items():
             if k == "aspirate_speed":
-                aspirate_flowrate = flowrate_builder(v["max"],
-                                                     initial=v["start"])
+                aspirate_flowrate = flowrate_builder(Unit(v["max"]),
+                                                     initial=Unit(v["start"]))
             calibrated_vol = Unit(v) if k == "volume" else None
             primer_vol = Unit(v) if k == "primer_vol" else None
             if k == "depth":
@@ -1540,8 +1671,8 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
     if dispense_target:
         for k, v in dispense_target.items():
             if k == "dispense_speed":
-                dispense_flowrate = flowrate_builder(v["max"],
-                                                     initial=v["start"])
+                dispense_flowrate = flowrate_builder(Unit(["max"]),
+                                                     initial=Unit(v["start"]))
             calibrated_vol = Unit(v) if k == "volume" else None
             if k == "depth":
                 following, tip_z = parse_depth(v)

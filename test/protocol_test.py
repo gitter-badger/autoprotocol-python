@@ -291,15 +291,15 @@ class DistributeTestCase(unittest.TestCase):
         p.distribute(
             c.well(0).set_volume("100:microliter"), c.well(1), "2:microliter",
             dispense_speed="150:microliter/second")
-        self.assertTrue(str(p.instructions[0].locations[1]["transports"]
-                            [2]["flowrate"]["target"]) ==
-                        "150:microliter/second")
+        self.assertTrue(p.instructions[0].locations[1]["transports"]
+                            [2]["flowrate"]["target"] ==
+                        Unit("150:microliter/second"))
         p.distribute(
             c.well(0), c.well(1), "2:microliter",
             distribute_target={"dispense_speed": "200:microliter/second"})
-        self.assertTrue(str(p.instructions[1].locations[1]["transports"]
-                            [2]["flowrate"]["target"]) ==
-                        "200:microliter/second")
+        self.assertTrue(p.instructions[1].locations[1]["transports"]
+                            [2]["flowrate"]["target"] ==
+                        Unit("200:microliter/second"))
 
 
 class TransferTestCase(unittest.TestCase):
@@ -403,7 +403,7 @@ class TransferTestCase(unittest.TestCase):
         self.assertEqual(
             p.instructions[0].locations[0]["transports"][1]['mode_params'][
                 'tip_position']['position_z'],
-            {'offset': '.004:meter', 'reference': 'well_bottom'}
+            {'offset': Unit('.004:meter'), 'reference': 'well_bottom'}
         )
 
     def test_max_transfer(self):
@@ -532,9 +532,9 @@ class TransferTestCase(unittest.TestCase):
         self.assertTrue(int((len(
             p.instructions[-1].locations[1]["transports"][4:])) / 2
                             ) == 10)
-        self.assertTrue(str(
+        self.assertTrue(
             p.instructions[-1].locations[1]["transports"][4]["flowrate"][
-                "target"]) == "100:microliter/second")
+                "target"] == Unit("100:microliter/second"))
         self.assertTrue(str(
             p.instructions[-1].locations[1]["transports"][4]["volume"]
                         ) == "-6.0:microliter")
@@ -552,9 +552,9 @@ class TransferTestCase(unittest.TestCase):
         self.assertTrue(int(len(
             p.instructions[-1].locations[0]["transports"][2:-5]) / 2
                             ) == 10)
-        self.assertTrue(str(
+        self.assertTrue(
             p.instructions[-1].locations[0]["transports"][2]["flowrate"][
-                "target"]) == "100:microliter/second")
+                "target"] == Unit("100:microliter/second"))
         self.assertTrue(str(
             p.instructions[-1].locations[0]["transports"][2]["volume"])
                         == "-6.0:microliter")
@@ -728,19 +728,19 @@ class StampTestCase(unittest.TestCase):
                          p.instructions[0].locations[0]["transports"][1][
                              "mode_params"]["tip_position"]["position_z"][
                              "offset"])
-        self.assertEqual('150:microliter/second',
+        self.assertEqual(Unit('150:microliter/second'),
                          p.instructions[0].locations[0]["transports"][2][
                              "flowrate"]["target"])
-        self.assertEqual('150:microliter/second',
+        self.assertEqual(Unit('150:microliter/second'),
                          p.instructions[0].locations[0]["transports"][3][
                              "flowrate"]["target"])
-        self.assertEqual('25:microliter/second',
+        self.assertEqual(Unit('25:microliter/second'),
                          p.instructions[0].locations[0]["transports"][22][
                              "flowrate"]["target"])
-        self.assertEqual('125:microliter/second',
+        self.assertEqual(Unit('125:microliter/second'),
                          p.instructions[0].locations[1]["transports"][1][
                              "flowrate"]["target"])
-        self.assertEqual('150:microliter/second',
+        self.assertEqual(Unit('150:microliter/second'),
                          p.instructions[0].locations[1]["transports"][22][
                              "flowrate"]["target"])
         self.assertEqual(Unit("10:microliter"),

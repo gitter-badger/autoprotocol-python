@@ -1,6 +1,7 @@
 from .liquid_handle_builders import location_builder, old_xfer_asp_transports,\
     old_xfer_dsp_transports, _MAX_SINGLE_TIP_CAPACITY, mix_transports_helper, \
-    old_stamp_asp_transports, old_stamp_dsp_transports, move_over_transport
+    old_stamp_asp_transports, old_stamp_dsp_transports, move_over_transport, \
+    _SUPPORTED_SHAPES
 from .container import Container, Well, WellGroup, SEAL_TYPES, COVER_TYPES
 from .container_type import ContainerType, _CONTAINER_TYPES
 from .unit import Unit, UnitError
@@ -1732,7 +1733,6 @@ class Protocol(object):
         arg_list = list(locals().items())
         arg_dict = {k: v for k, v in arg_list if v is not None}
 
-        _SUPPORTED_SHAPES = ["SBS96", "SBS384"]
         if shape_format and shape_format not in _SUPPORTED_SHAPES:
             raise TypeError("Invalid shape given. Shape has to be in {}".format(
                 _SUPPORTED_SHAPES))
