@@ -1,7 +1,7 @@
 from .liquid_handle_builders import location_builder, old_xfer_asp_transports,\
-    old_xfer_dsp_transports, _MAX_SINGLE_TIP_CAPACITY, mix_transports_helper, \
+    old_xfer_dsp_transports, mix_transports_helper, \
     old_stamp_asp_transports, old_stamp_dsp_transports, move_over_transport, \
-    _SUPPORTED_SHAPES
+    _SUPPORTED_SHAPES, _MAX_TIP_CAPACITY
 from .container import Container, Well, WellGroup, SEAL_TYPES, COVER_TYPES
 from .container_type import ContainerType, _CONTAINER_TYPES
 from .unit import Unit, UnitError
@@ -1169,15 +1169,15 @@ class Protocol(object):
         for s, d, v in list(zip(source.wells, dest.wells, volume)):
             self._remove_cover(s.container, "pipette from")
             self._remove_cover(d.container, "pipette into")
-            if v > _MAX_SINGLE_TIP_CAPACITY:
+            if v > _MAX_TIP_CAPACITY["single"]:
                 diff = Unit.fromstring(v)
-                while diff > _MAX_SINGLE_TIP_CAPACITY:
-                    v = _MAX_SINGLE_TIP_CAPACITY
+                while diff > _MAX_TIP_CAPACITY["single"]:
+                    v = _MAX_TIP_CAPACITY["single"]
                     locations += location_helper(s, d, v)
                     if not one_tip:
                         self.append(LiquidHandle(locations, tip_type=tip_type))
                         locations = []
-                    diff -= _MAX_SINGLE_TIP_CAPACITY
+                    diff -= _MAX_TIP_CAPACITY["single"]
                 v = diff
             # Ignore 0 volume transfers <- copied from old behavior
             if v > Unit("0:microliter"):
@@ -1328,7 +1328,7 @@ class Protocol(object):
         self._remove_cover(dest.container, "consolidate into")
         for s, v in zip(sources, volumes):
             self._remove_cover(s.container, "consolidate from")
-            if acc_vol + v <= _MAX_SINGLE_TIP_CAPACITY:
+            if acc_vol + v <= _MAX_TIP_CAPACITY["single"]:
                 locations += location_helper(v, s)
             elif allow_carryover:
                 # If allow_carryover and overflow, first dispense
@@ -2031,13 +2031,13 @@ class Protocol(object):
         # Calculate max_tip_vol smartly based on residual volumes
         # tip_capacity determined with calibration parameters
         if shape_format == "SBS96":
-            tip_capacity = Unit.fromstring("158:microliter")
+            tip_capacity = _MAX_TIP_CAPACITY["multi_96"]
             primer_resid = Unit.fromstring("5:microliter")
             transit_resid = Unit.fromstring("1:microliter")
             pre_buffer_resid = Unit.fromstring("5:microliter")
         elif shape_format == "SBS384":
             # TODO: Replace below when this is calibrated
-            tip_capacity = Unit.fromstring("30:microliter")
+            tip_capacity = _MAX_TIP_CAPACITY["multi_384"]
             primer_resid = Unit.fromstring("5:microliter")
             # Transit vol not used in driver, defining to maintain backwards
             # compatibility

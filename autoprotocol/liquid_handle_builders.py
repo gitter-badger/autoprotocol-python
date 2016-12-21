@@ -1,7 +1,12 @@
 from .unit import Unit
 from autoprotocol import Well
 
-_MAX_SINGLE_TIP_CAPACITY = Unit(900, "microliter")
+_MAX_TIP_CAPACITY = dict(
+    single=Unit("900:microliter"),
+    multi_96=Unit("158:microliter"),
+    multi_384=Unit("26.5:microliter")
+)
+
 _SUPPORTED_SHAPES = ["SBS96", "SBS384"]
 
 
@@ -375,430 +380,6 @@ def mix_transports_helper(volume=Unit("50:microliter"),
         ] * repetitions
     )
     return mix_list
-
-
-def old_stamp_dsp_transports(volume, aspirate_speed=None, dispense_speed=None,
-                             aspirate_source=None, dispense_target=None,
-                             pre_buffer=None, disposal_vol=None,
-                             transit_vol=None, blowout_buffer=None,
-                             mix_before=None, mix_after=None, mix_vol=None,
-                             repetitions=None, flowrate=None,
-                             new_defaults=None):
-    """
-    Helper function for recreating aspirate behavior using transports
-
-    Parameters
-    ----------
-    volume : str, Unit, list
-        The volume(s) of liquid to be transferred from source wells to
-        destination wells.  Volume can be specified as a single string or
-        Unit, or can be given as a list of volumes.  The length of a list
-        of volumes must match the number of destination wells given unless
-        the same volume is to be transferred to each destination well.
-    mix_after : bool, optional
-        Specify whether to mix the liquid in the destination well after
-        liquid is transferred.
-    mix_before : bool, optional
-        Specify whether to mix the liquid in the source well before
-        liquid is transferred.
-    mix_vol : str, Unit, optional
-        Volume to aspirate and dispense in order to mix liquid in a wells
-        before and/or after each transfer step.
-    repetitions : int, optional
-        Number of times to aspirate and dispense in order to mix
-        liquid in well before and/or after each transfer step.
-    flowrate : str, Unit, optional
-        Speed at which to mix liquid in well before and/or after each
-        transfer step.
-    aspirate_speed : str, Unit, optional
-        Speed at which to aspirate liquid from source well.  May not be
-        specified if aspirate_source is also specified. By default this is
-        the maximum aspiration speed, with the start speed being half of
-        the speed specified.
-    dispense_speed : str, Unit, optional
-        Speed at which to dispense liquid into the destination well.  May
-        not be specified if dispense_target is also specified.
-    aspirate_source : fn, optional
-        Can't be specified if aspirate_speed is also specified.
-    dispense_target : fn, optional
-        Same but opposite of  aspirate_source.
-    pre_buffer : str, Unit, optional
-        Volume of air aspirated before aspirating liquid.
-    disposal_vol : str, Unit, optional
-        Volume of extra liquid to aspirate that will be dispensed into
-        trash afterwards.
-    transit_vol : str, Unit, optional
-        Volume of air aspirated after aspirating liquid to reduce presence
-        of bubbles at pipette tip.
-    blowout_buffer : bool, optional
-        If true the operation will dispense the pre_buffer along with the
-        dispense volume. Cannot be true if disposal_vol is specified.
-    new_defaults: bool, optional
-        Specifies if recommended pipetting defaults will be used.
-        This is false by default to maintain backwards compatibility and
-        produce exactly the same behavior as before
-
-    Returns
-    -------
-    Aspirate transports : List
-    """
-    arg_dict = {k: v for k, v in list(locals().items()) if v}
-    arg_dict.pop("aspirate_source", None)
-    arg_dict.pop("aspirate_speed", None)
-    arg_dict.pop("mix_before", None)
-
-    old_params = parse_stamp_params(**arg_dict)
-    return stamp_dsp_helper(volume, **old_params)
-
-
-def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
-                     blowout_buffer=None, tip_z=None,
-                     following=None, calibrated_vol=None,
-                     mix_speed=None, repetitions=None,
-                     mix_vol=None, mix_after=None,
-                     new_defaults=None):
-    """
-    Helper function for creating dispense behavior using transports
-
-    Parameters
-    ----------
-    volume : str, Unit, list
-        The volume(s) of liquid to be transferred from source wells to
-        destination wells.  Volume can be specified as a single string or
-        Unit, or can be given as a list of volumes.  The length of a list
-        of volumes must match the number of destination wells given unless
-        the same volume is to be transferred to each destination well.
-    dispense_flowrate : str, Unit, optional
-        Speed at which to dispense liquid into the destination well.  May
-        not be specified if dispense_target is also specified.
-    pre_buffer : str, Unit, optional
-        Volume of air aspirated before aspirating liquid.
-    blowout_buffer : bool, optional
-        If true the operation will dispense the pre_buffer along with the
-        dispense volume. Cannot be true if disposal_vol is specified.
-    tip_z: z_position_builder()
-        Z_position of dispense step
-    following: bool
-        If true, the tip will try to "follow" the liquid level as its dispensing
-    calibrated_vol: Unit
-        Calibrated volume that will be aspirated
-    mix_after: Bool
-        Determines if mixing is carried out after dispensing
-    mix_speed: Unit
-        Mixing speed
-    repetitions: Int
-        Number of mixing repetitions
-    mix_vol: Unit
-        Volume of mix after dispensing
-    new_defaults: bool, optional
-        Specifies if recommended pipetting defaults will be used.
-        This is false by default to maintain backwards compatibility and
-        produce exactly the same behavior as before
-
-    Returns
-    -------
-    Dispense transports : List
-    """
-    # Setup dispense
-    dispense_transport_list = []
-
-    # Move to dispense position
-    if not tip_z:
-        tip_z = z_position_builder(
-            reference="well_bottom",
-            offset=Unit("1:mm")
-        )
-    dispense_transport_list += [
-        transport_builder(
-            mode_params=mode_params_builder(
-                tip_z=tip_z
-            )
-        )
-    ]
-
-    if following:
-        dispense_tip_z = z_position_builder(
-                            reference="liquid_surface",
-                            detection_method="tracked",
-                            offset=Unit("-1:mm")
-                        )
-    else:
-        dispense_tip_z = z_position_builder(reference="preceding_position")
-
-    dispense_transport_list += [
-        transport_builder(
-            volume=volume,
-            x_calibrated_volume=calibrated_vol,
-            flowrate=dispense_flowrate,
-            mode_params=mode_params_builder(
-                tip_z=dispense_tip_z
-            )
-        )
-    ]
-
-    # Mix-after
-    if mix_after:
-        mix_vol = Unit(mix_vol or (volume / 2))
-        dispense_transport_list += mix_transports_helper(mix_vol, mix_speed,
-                                                         repetitions)
-
-    # Blowout pre_buffer
-    if blowout_buffer and pre_buffer > Unit("0:uL"):
-        if new_defaults:
-            dispense_transport_list += [
-                transport_builder(
-                    mode_params=mode_params_builder(
-                        tip_z=z_position_builder(
-                            reference="well_top",
-                            offset=Unit("-2:mm")
-                        ),
-                    )
-                )
-            ]
-        else:
-            dispense_transport_list += [
-                transport_builder(
-                    mode_params=mode_params_builder(
-                        tip_z=z_position_builder(
-                            reference="well_bottom",
-                            offset=Unit("1:mm")
-                        ),
-                    )
-                )
-            ]
-        dispense_transport_list += [(
-            transport_builder(
-                x_calibrated_volume=pre_buffer,
-                mode_params=mode_params_builder(
-                    tip_z=z_position_builder(
-                        reference="preceding_position",
-                    ),
-                    liquid_class="air"
-                )
-            )
-        )]
-
-    return dispense_transport_list
-
-
-def move_over_transport():
-    """
-    Helper function for generating a transport which hovers above the target
-    location
-
-    Returns
-    -------
-    transport_list: List
-    """
-    transport_list = []
-    transport_list += [(
-        transport_builder(
-            mode_params=mode_params_builder(
-                tip_z=z_position_builder(
-                    reference="preceding_position"
-                )
-            )
-        )
-    )]
-    return transport_list
-
-
-def old_stamp_asp_transports(volume, aspirate_speed=None, dispense_speed=None,
-                             aspirate_source=None, dispense_target=None,
-                             pre_buffer=None, disposal_vol=None,
-                             transit_vol=None, blowout_buffer=None,
-                             mix_before=None, mix_after=None, mix_vol=None,
-                             repetitions=None, flowrate=None,
-                             new_defaults=None):
-    """
-    Helper function for recreating aspirate behavior using transports
-
-    Parameters
-    ----------
-    volume : str, Unit, list
-        The volume(s) of liquid to be transferred from source wells to
-        destination wells.  Volume can be specified as a single string or
-        Unit, or can be given as a list of volumes.  The length of a list
-        of volumes must match the number of destination wells given unless
-        the same volume is to be transferred to each destination well.
-    mix_after : bool, optional
-        Specify whether to mix the liquid in the destination well after
-        liquid is transferred.
-    mix_before : bool, optional
-        Specify whether to mix the liquid in the source well before
-        liquid is transferred.
-    mix_vol : str, Unit, optional
-        Volume to aspirate and dispense in order to mix liquid in a wells
-        before and/or after each transfer step.
-    repetitions : int, optional
-        Number of times to aspirate and dispense in order to mix
-        liquid in well before and/or after each transfer step.
-    flowrate : str, Unit, optional
-        Speed at which to mix liquid in well before and/or after each
-        transfer step.
-    aspirate_speed : str, Unit, optional
-        Speed at which to aspirate liquid from source well.  May not be
-        specified if aspirate_source is also specified. By default this is
-        the maximum aspiration speed, with the start speed being half of
-        the speed specified.
-    dispense_speed : str, Unit, optional
-        Speed at which to dispense liquid into the destination well.  May
-        not be specified if dispense_target is also specified.
-    aspirate_source : fn, optional
-        Can't be specified if aspirate_speed is also specified.
-    dispense_target : fn, optional
-        Same but opposite of  aspirate_source.
-    pre_buffer : str, Unit, optional
-        Volume of air aspirated before aspirating liquid.
-    disposal_vol : str, Unit, optional
-        Volume of extra liquid to aspirate that will be dispensed into
-        trash afterwards.
-    transit_vol : str, Unit, optional
-        Volume of air aspirated after aspirating liquid to reduce presence
-        of bubbles at pipette tip.
-    blowout_buffer : bool, optional
-        If true the operation will dispense the pre_buffer along with the
-        dispense volume. Cannot be true if disposal_vol is specified.
-    new_defaults: bool, optional
-        Specifies if recommended pipetting defaults will be used.
-        This is false by default to maintain backwards compatibility and
-        produce exactly the same behavior as before
-
-    Returns
-    -------
-    Aspirate transports : List
-    """
-    arg_dict = {k: v for k, v in list(locals().items()) if v is not None}
-    arg_dict.pop("dispense_target", None)
-    arg_dict.pop("dispense_speed", None)
-    arg_dict.pop("mix_after", None)
-    arg_dict.pop("blowout_buffer", None)
-
-    old_params = parse_stamp_params(**arg_dict)
-    # Following did not apply for stamp aspirates
-    old_params.pop("following", None)
-
-    return stamp_asp_helper(volume, **old_params)
-
-
-def stamp_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
-                     tip_z=None, calibrated_vol=None, primer_vol=None,
-                     blowout_buffer=None,
-                     mix_before=None, mix_speed=None,
-                     repetitions=None, mix_vol=None,
-                     new_defaults=None):
-    """
-    Helper function for recreating similar transport behavior for aspirates.
-    Note that volumes are not treated in the exact same manner, which may
-    result in additional volume being aspirated for the ancillary operations
-
-    Parameters
-    ----------
-    volume : str, Unit, list
-        The volume(s) of liquid to be transferred from source wells to
-        destination wells.  Volume can be specified as a single string or
-        Unit, or can be given as a list of volumes.  The length of a list
-        of volumes must match the number of destination wells given unless
-        the same volume is to be transferred to each destination well.
-    aspirate_flowrate : flowrate_builder()
-        Flowrate at which to aspirate liquid from source well.
-    pre_buffer : str, Unit, optional
-        Volume of air aspirated before aspirating liquid.
-    tip_z: z_position_builder()
-        Z_position of dispense step
-    calibrated_vol: Unit
-        Calibrated volume that will be aspirated
-    primer_vol: Unit
-        Primer volume that will be aspirated in addition to volume
-    mix_before: Bool
-        Determines if mixing is carried out before aspirating
-    mix_speed: Unit
-        Mixing speed
-    repetitions: Int
-        Number of mixing repetitions
-    mix_vol: Unit
-        Volume of mix after dispensing
-    new_defaults: bool, optional
-        Specifies if recommended pipetting defaults will be used.
-        This is false by default to maintain backwards compatibility and
-        produce exactly the same behavior as before
-
-    Returns
-    -------
-    Aspirate transports : List
-    """
-
-    # Setup aspirate
-    aspirate_transport_list = []
-    volume = Unit(volume)
-    safe_offset = Unit("10:mm")
-
-    # Pre-Buffer
-    if pre_buffer > Unit("0:uL"):
-        aspirate_transport_list += [(
-            transport_builder(
-                x_calibrated_volume=-pre_buffer,
-                mode_params=mode_params_builder(
-                    tip_z=z_position_builder(
-                        reference="well_top",
-                        offset=safe_offset
-                    ),
-                    liquid_class="air"
-                )
-            )
-        )]
-
-    # Move to specified z-location
-    aspirate_transport_list += [(
-        transport_builder(
-            mode_params=mode_params_builder(
-                tip_z=tip_z
-            )
-        )
-    )]
-
-    # Mix-before
-    if mix_before:
-        mix_vol = Unit(mix_vol or (volume / 2))
-        aspirate_transport_list += mix_transports_helper(mix_vol, mix_speed,
-                                                         repetitions,
-                                                         move_z=False)
-
-    # Aspirate with primer + disposal vol
-    if not primer_vol:
-        primer_vol = Unit("5:uL")
-
-    # No following unless explicitly stated since Bravo doesn't have sensing
-    aspirate_tip_z = z_position_builder(reference="preceding_position")
-
-    cal_asp_vol = -(calibrated_vol + primer_vol) if \
-        calibrated_vol else None
-    aspirate_transport_list += [
-        transport_builder(
-            volume=-(volume + primer_vol),
-            x_calibrated_volume=cal_asp_vol,
-            flowrate=aspirate_flowrate,
-            mode_params=mode_params_builder(
-                tip_z=aspirate_tip_z
-            )
-        )
-    ]
-
-    # Dispense Prime Volume
-    aspirate_transport_list += [(
-        transport_builder(
-            volume=primer_vol,
-            x_calibrated_volume=primer_vol,
-            flowrate=aspirate_flowrate,
-            mode_params=mode_params_builder(
-                tip_z=z_position_builder(
-                    reference="preceding_position"
-                )
-            )
-        )
-    )]
-
-    return aspirate_transport_list
 
 
 def old_xfer_asp_transports(volume, aspirate_speed=None, dispense_speed=None,
@@ -1524,6 +1105,430 @@ def parse_xfer_params(volume, aspirate_speed=None, dispense_speed=None,
     # Handling mix kwargs
     pipette_args["mix_speed"] = pipette_args.pop("flowrate", None)
     return pipette_args
+
+
+def move_over_transport():
+    """
+    Helper function for generating a transport which hovers above the target
+    location
+
+    Returns
+    -------
+    transport_list: List
+    """
+    transport_list = []
+    transport_list += [(
+        transport_builder(
+            mode_params=mode_params_builder(
+                tip_z=z_position_builder(
+                    reference="preceding_position"
+                )
+            )
+        )
+    )]
+    return transport_list
+
+
+def old_stamp_dsp_transports(volume, aspirate_speed=None, dispense_speed=None,
+                             aspirate_source=None, dispense_target=None,
+                             pre_buffer=None, disposal_vol=None,
+                             transit_vol=None, blowout_buffer=None,
+                             mix_before=None, mix_after=None, mix_vol=None,
+                             repetitions=None, flowrate=None,
+                             new_defaults=None):
+    """
+    Helper function for recreating aspirate behavior using transports
+
+    Parameters
+    ----------
+    volume : str, Unit, list
+        The volume(s) of liquid to be transferred from source wells to
+        destination wells.  Volume can be specified as a single string or
+        Unit, or can be given as a list of volumes.  The length of a list
+        of volumes must match the number of destination wells given unless
+        the same volume is to be transferred to each destination well.
+    mix_after : bool, optional
+        Specify whether to mix the liquid in the destination well after
+        liquid is transferred.
+    mix_before : bool, optional
+        Specify whether to mix the liquid in the source well before
+        liquid is transferred.
+    mix_vol : str, Unit, optional
+        Volume to aspirate and dispense in order to mix liquid in a wells
+        before and/or after each transfer step.
+    repetitions : int, optional
+        Number of times to aspirate and dispense in order to mix
+        liquid in well before and/or after each transfer step.
+    flowrate : str, Unit, optional
+        Speed at which to mix liquid in well before and/or after each
+        transfer step.
+    aspirate_speed : str, Unit, optional
+        Speed at which to aspirate liquid from source well.  May not be
+        specified if aspirate_source is also specified. By default this is
+        the maximum aspiration speed, with the start speed being half of
+        the speed specified.
+    dispense_speed : str, Unit, optional
+        Speed at which to dispense liquid into the destination well.  May
+        not be specified if dispense_target is also specified.
+    aspirate_source : fn, optional
+        Can't be specified if aspirate_speed is also specified.
+    dispense_target : fn, optional
+        Same but opposite of  aspirate_source.
+    pre_buffer : str, Unit, optional
+        Volume of air aspirated before aspirating liquid.
+    disposal_vol : str, Unit, optional
+        Volume of extra liquid to aspirate that will be dispensed into
+        trash afterwards.
+    transit_vol : str, Unit, optional
+        Volume of air aspirated after aspirating liquid to reduce presence
+        of bubbles at pipette tip.
+    blowout_buffer : bool, optional
+        If true the operation will dispense the pre_buffer along with the
+        dispense volume. Cannot be true if disposal_vol is specified.
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
+
+    Returns
+    -------
+    Aspirate transports : List
+    """
+    arg_dict = {k: v for k, v in list(locals().items()) if v}
+    arg_dict.pop("aspirate_source", None)
+    arg_dict.pop("aspirate_speed", None)
+    arg_dict.pop("mix_before", None)
+
+    old_params = parse_stamp_params(**arg_dict)
+    return stamp_dsp_helper(volume, **old_params)
+
+
+def stamp_dsp_helper(volume, dispense_flowrate=None, pre_buffer=None,
+                     blowout_buffer=None, tip_z=None,
+                     following=None, calibrated_vol=None,
+                     mix_speed=None, repetitions=None,
+                     mix_vol=None, mix_after=None,
+                     new_defaults=None):
+    """
+    Helper function for creating dispense behavior using transports
+
+    Parameters
+    ----------
+    volume : str, Unit, list
+        The volume(s) of liquid to be transferred from source wells to
+        destination wells.  Volume can be specified as a single string or
+        Unit, or can be given as a list of volumes.  The length of a list
+        of volumes must match the number of destination wells given unless
+        the same volume is to be transferred to each destination well.
+    dispense_flowrate : str, Unit, optional
+        Speed at which to dispense liquid into the destination well.  May
+        not be specified if dispense_target is also specified.
+    pre_buffer : str, Unit, optional
+        Volume of air aspirated before aspirating liquid.
+    blowout_buffer : bool, optional
+        If true the operation will dispense the pre_buffer along with the
+        dispense volume. Cannot be true if disposal_vol is specified.
+    tip_z: z_position_builder()
+        Z_position of dispense step
+    following: bool
+        If true, the tip will try to "follow" the liquid level as its dispensing
+    calibrated_vol: Unit
+        Calibrated volume that will be aspirated
+    mix_after: Bool
+        Determines if mixing is carried out after dispensing
+    mix_speed: Unit
+        Mixing speed
+    repetitions: Int
+        Number of mixing repetitions
+    mix_vol: Unit
+        Volume of mix after dispensing
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
+
+    Returns
+    -------
+    Dispense transports : List
+    """
+    # Setup dispense
+    dispense_transport_list = []
+
+    # Move to dispense position
+    if not tip_z:
+        tip_z = z_position_builder(
+            reference="well_bottom",
+            offset=Unit("1:mm")
+        )
+    dispense_transport_list += [
+        transport_builder(
+            mode_params=mode_params_builder(
+                tip_z=tip_z
+            )
+        )
+    ]
+
+    if following:
+        dispense_tip_z = z_position_builder(
+                            reference="liquid_surface",
+                            detection_method="tracked",
+                            offset=Unit("-1:mm")
+                        )
+    else:
+        dispense_tip_z = z_position_builder(reference="preceding_position")
+
+    dispense_transport_list += [
+        transport_builder(
+            volume=volume,
+            x_calibrated_volume=calibrated_vol,
+            flowrate=dispense_flowrate,
+            mode_params=mode_params_builder(
+                tip_z=dispense_tip_z
+            )
+        )
+    ]
+
+    # Mix-after
+    if mix_after:
+        mix_vol = Unit(mix_vol or (volume / 2))
+        dispense_transport_list += mix_transports_helper(mix_vol, mix_speed,
+                                                         repetitions)
+
+    # Blowout pre_buffer
+    if blowout_buffer and pre_buffer > Unit("0:uL"):
+        if new_defaults:
+            dispense_transport_list += [
+                transport_builder(
+                    mode_params=mode_params_builder(
+                        tip_z=z_position_builder(
+                            reference="well_top",
+                            offset=Unit("-2:mm")
+                        ),
+                    )
+                )
+            ]
+        else:
+            dispense_transport_list += [
+                transport_builder(
+                    mode_params=mode_params_builder(
+                        tip_z=z_position_builder(
+                            reference="well_bottom",
+                            offset=Unit("1:mm")
+                        ),
+                    )
+                )
+            ]
+        dispense_transport_list += [(
+            transport_builder(
+                x_calibrated_volume=pre_buffer,
+                mode_params=mode_params_builder(
+                    tip_z=z_position_builder(
+                        reference="preceding_position",
+                    ),
+                    liquid_class="air"
+                )
+            )
+        )]
+
+    return dispense_transport_list
+
+
+def old_stamp_asp_transports(volume, aspirate_speed=None, dispense_speed=None,
+                             aspirate_source=None, dispense_target=None,
+                             pre_buffer=None, disposal_vol=None,
+                             transit_vol=None, blowout_buffer=None,
+                             mix_before=None, mix_after=None, mix_vol=None,
+                             repetitions=None, flowrate=None,
+                             new_defaults=None):
+    """
+    Helper function for recreating aspirate behavior using transports
+
+    Parameters
+    ----------
+    volume : str, Unit, list
+        The volume(s) of liquid to be transferred from source wells to
+        destination wells.  Volume can be specified as a single string or
+        Unit, or can be given as a list of volumes.  The length of a list
+        of volumes must match the number of destination wells given unless
+        the same volume is to be transferred to each destination well.
+    mix_after : bool, optional
+        Specify whether to mix the liquid in the destination well after
+        liquid is transferred.
+    mix_before : bool, optional
+        Specify whether to mix the liquid in the source well before
+        liquid is transferred.
+    mix_vol : str, Unit, optional
+        Volume to aspirate and dispense in order to mix liquid in a wells
+        before and/or after each transfer step.
+    repetitions : int, optional
+        Number of times to aspirate and dispense in order to mix
+        liquid in well before and/or after each transfer step.
+    flowrate : str, Unit, optional
+        Speed at which to mix liquid in well before and/or after each
+        transfer step.
+    aspirate_speed : str, Unit, optional
+        Speed at which to aspirate liquid from source well.  May not be
+        specified if aspirate_source is also specified. By default this is
+        the maximum aspiration speed, with the start speed being half of
+        the speed specified.
+    dispense_speed : str, Unit, optional
+        Speed at which to dispense liquid into the destination well.  May
+        not be specified if dispense_target is also specified.
+    aspirate_source : fn, optional
+        Can't be specified if aspirate_speed is also specified.
+    dispense_target : fn, optional
+        Same but opposite of  aspirate_source.
+    pre_buffer : str, Unit, optional
+        Volume of air aspirated before aspirating liquid.
+    disposal_vol : str, Unit, optional
+        Volume of extra liquid to aspirate that will be dispensed into
+        trash afterwards.
+    transit_vol : str, Unit, optional
+        Volume of air aspirated after aspirating liquid to reduce presence
+        of bubbles at pipette tip.
+    blowout_buffer : bool, optional
+        If true the operation will dispense the pre_buffer along with the
+        dispense volume. Cannot be true if disposal_vol is specified.
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
+
+    Returns
+    -------
+    Aspirate transports : List
+    """
+    arg_dict = {k: v for k, v in list(locals().items()) if v is not None}
+    arg_dict.pop("dispense_target", None)
+    arg_dict.pop("dispense_speed", None)
+    arg_dict.pop("mix_after", None)
+    arg_dict.pop("blowout_buffer", None)
+
+    old_params = parse_stamp_params(**arg_dict)
+    # Following did not apply for stamp aspirates
+    old_params.pop("following", None)
+
+    return stamp_asp_helper(volume, **old_params)
+
+
+def stamp_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
+                     tip_z=None, calibrated_vol=None, primer_vol=None,
+                     blowout_buffer=None,
+                     mix_before=None, mix_speed=None,
+                     repetitions=None, mix_vol=None,
+                     new_defaults=None):
+    """
+    Helper function for recreating similar transport behavior for aspirates.
+    Note that volumes are not treated in the exact same manner, which may
+    result in additional volume being aspirated for the ancillary operations
+
+    Parameters
+    ----------
+    volume : str, Unit, list
+        The volume(s) of liquid to be transferred from source wells to
+        destination wells.  Volume can be specified as a single string or
+        Unit, or can be given as a list of volumes.  The length of a list
+        of volumes must match the number of destination wells given unless
+        the same volume is to be transferred to each destination well.
+    aspirate_flowrate : flowrate_builder()
+        Flowrate at which to aspirate liquid from source well.
+    pre_buffer : str, Unit, optional
+        Volume of air aspirated before aspirating liquid.
+    tip_z: z_position_builder()
+        Z_position of dispense step
+    calibrated_vol: Unit
+        Calibrated volume that will be aspirated
+    primer_vol: Unit
+        Primer volume that will be aspirated in addition to volume
+    mix_before: Bool
+        Determines if mixing is carried out before aspirating
+    mix_speed: Unit
+        Mixing speed
+    repetitions: Int
+        Number of mixing repetitions
+    mix_vol: Unit
+        Volume of mix after dispensing
+    new_defaults: bool, optional
+        Specifies if recommended pipetting defaults will be used.
+        This is false by default to maintain backwards compatibility and
+        produce exactly the same behavior as before
+
+    Returns
+    -------
+    Aspirate transports : List
+    """
+
+    # Setup aspirate
+    aspirate_transport_list = []
+    volume = Unit(volume)
+    safe_offset = Unit("10:mm")
+
+    # Pre-Buffer
+    if pre_buffer > Unit("0:uL"):
+        aspirate_transport_list += [(
+            transport_builder(
+                x_calibrated_volume=-pre_buffer,
+                mode_params=mode_params_builder(
+                    tip_z=z_position_builder(
+                        reference="well_top",
+                        offset=safe_offset
+                    ),
+                    liquid_class="air"
+                )
+            )
+        )]
+
+    # Move to specified z-location
+    aspirate_transport_list += [(
+        transport_builder(
+            mode_params=mode_params_builder(
+                tip_z=tip_z
+            )
+        )
+    )]
+
+    # Mix-before
+    if mix_before:
+        mix_vol = Unit(mix_vol or (volume / 2))
+        aspirate_transport_list += mix_transports_helper(mix_vol, mix_speed,
+                                                         repetitions,
+                                                         move_z=False)
+
+    # Aspirate with primer + disposal vol
+    if not primer_vol:
+        primer_vol = Unit("5:uL")
+
+    # No following unless explicitly stated since Bravo doesn't have sensing
+    aspirate_tip_z = z_position_builder(reference="preceding_position")
+
+    cal_asp_vol = -(calibrated_vol + primer_vol) if \
+        calibrated_vol else None
+    aspirate_transport_list += [
+        transport_builder(
+            volume=-(volume + primer_vol),
+            x_calibrated_volume=cal_asp_vol,
+            flowrate=aspirate_flowrate,
+            mode_params=mode_params_builder(
+                tip_z=aspirate_tip_z
+            )
+        )
+    ]
+
+    # Dispense Prime Volume
+    aspirate_transport_list += [(
+        transport_builder(
+            volume=primer_vol,
+            x_calibrated_volume=primer_vol,
+            flowrate=aspirate_flowrate,
+            mode_params=mode_params_builder(
+                tip_z=z_position_builder(
+                    reference="preceding_position"
+                )
+            )
+        )
+    )]
+
+    return aspirate_transport_list
 
 
 def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,

@@ -909,7 +909,7 @@ class StampTestCase(unittest.TestCase):
         self.assertEqual(len(p.instructions[0].locations), 12 * 2)
         self.assertEqual(len(p.instructions), 1)
 
-        p.stamp(plate_list[0], plate_list[1], "60:microliter", one_tip=True,
+        p.stamp(plate_list[0], plate_list[1], "45:microliter", one_tip=True,
                 shape_format="SBS384")
         self.assertEqual(len(p.instructions[-1].locations), 3 * 2)
         self.assertEqual(len(p.instructions), 2)
