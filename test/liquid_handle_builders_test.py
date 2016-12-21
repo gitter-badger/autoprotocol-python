@@ -1,5 +1,8 @@
 import unittest
-from autoprotocol.liquid_handle_builders import *
+from autoprotocol.liquid_handle_builders import shape_builder, \
+    transport_builder, flowrate_builder, location_builder, \
+    mode_params_builder, z_position_builder
+from autoprotocol import Unit
 
 
 class LiquidHandleBuilder(unittest.TestCase):
