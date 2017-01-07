@@ -1745,8 +1745,9 @@ class Protocol(object):
 
         if disposal_vol:
             warnings.warn("Disposal vol is not implemented for stamp driver")
-        if transit_vol:
-            warnings.warn("Transit vol is not implemented for stamp driver")
+        if transit_vol and not new_defaults:
+            warnings.warn("Transit vol is not implemented for stamp driver."
+                          "Specify `new_defaults` to use transit_vol")
 
         def get_valid_origin(origin):
             # Support existing transfer syntax by converting a container to all
@@ -2052,7 +2053,6 @@ class Protocol(object):
         if transit_vol:
             transit_resid = Unit.fromstring(transit_vol)
 
-        # Note: this is used in compiler, but its not implemented in drivert
         # Determine max(transit_vol, primer_vol)
         if primer_resid > Unit.fromstring(transit_resid):
             primer_or_transit = primer_resid
@@ -2070,7 +2070,7 @@ class Protocol(object):
                             "aspirate_source", "dispense_target",
                             "pre_buffer", "blowout_buffer", "mix_before",
                             "mix_after", "mix_vol", "repetitions", "flowrate",
-                            "new_defaults"]
+                            "transit_vol", "shape_format", "new_defaults"]
             stamp_args = {param: arg_dict[param] for param in stamp_params
                           if param in arg_dict}
 
@@ -2595,7 +2595,7 @@ class Protocol(object):
             locations += [location_builder(
                 location=w,
                 transports=mix_transports_helper(volume, speed, repetitions,
-                                                 new_defaults)
+                                                 "0.5:mm", new_defaults)
             )]
             if not one_tip:
                 self.append(LiquidHandle(locations))

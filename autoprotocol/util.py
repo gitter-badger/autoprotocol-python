@@ -1,4 +1,4 @@
-from .unit import Unit
+from .unit import Unit, UnitStringError, UnitValueError
 from textwrap import dedent
 
 
@@ -520,3 +520,61 @@ def is_valid_well(param):
         if not all(isinstance(well, Well) for well in param):
             return False
     return True
+
+
+def parse_unit(unit, accepted_unit=None):
+    """
+    Parses and checks unit provided and ensures its of valid type and
+    dimensionality.
+    Raises type errors if the Unit provided is invalid
+
+    Parameters
+    ----------
+    unit: Unit, str
+        Input to be checked
+    accepted_unit: Unit, str, List[Unit], List[str], Optional
+        Dimensionality of unit should match against the accepted unit(s).
+        Examples:
+            parse_unit("1:ul", "1:ml")
+            parse_unit("1:ul", "ml")
+            parse_unit("1:ul", ["ml", "kg"])
+
+    Returns
+    -------
+    Unit:
+        Parsed and checked unit
+
+    Raises
+    ------
+    TypeError:
+        Error when input does not match expected type or dimensionality
+    """
+    if not isinstance(unit, Unit):
+        try:
+            unit = Unit(unit)
+        except (UnitStringError, UnitValueError):
+            raise TypeError("{} is not of type Unit/str".format(unit))
+    if accepted_unit is not None:
+        # Note: This is hacky. We should formalize the concept of base Units
+        # in AP-Py
+        def parse_base_unit(base_unit):
+            if not isinstance(base_unit, Unit):
+                if isinstance(base_unit, str):
+                    bu = base_unit.split(":")
+                    if len(bu) == 1:
+                        base_unit = "1:" + bu[0]
+                    elif len(bu) != 2:
+                        raise ValueError("{} is not a valid base unit".format(
+                            base_unit
+                        ))
+            return Unit(base_unit)
+
+        if isinstance(accepted_unit, list):
+            accepted_unit = [parse_base_unit(a_u) for a_u in accepted_unit]
+        else:
+            accepted_unit = [parse_base_unit(accepted_unit)]
+        if all([unit.dimensionality != a_u.dimensionality for a_u in
+                accepted_unit]):
+            raise TypeError("{} is not of the expected dimensionality "
+                            "{}".format(unit, accepted_unit.dimensionality))
+    return unit

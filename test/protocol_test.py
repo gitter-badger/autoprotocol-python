@@ -643,9 +643,11 @@ class StampTestCase(unittest.TestCase):
         p.stamp(plate_1_96.well(0), plate_2_96.well(0), "10:microliter",
                 new_defaults=True)
         self.assertTrue(len(p.instructions), 2)
-        # For now, aspirates are not affected by new defaults
-        self.assertEqual(p.instructions[0].locations[0],
-                         p.instructions[1].locations[0])
+        # Aspirates currently differ according to transit volume
+        old_transports = p.instructions[0].locations[0]["transports"]
+        new_transports = p.instructions[1].locations[0]["transports"]
+        self.assertEqual(len(old_transports), 4)
+        self.assertEqual(len(new_transports), 6)
         # Dispenses currently differ according to following and blowout position
         old_transports = p.instructions[0].locations[1]["transports"]
         new_transports = p.instructions[1].locations[1]["transports"]
@@ -654,11 +656,14 @@ class StampTestCase(unittest.TestCase):
                          "preceding_position")
         self.assertEqual(new_transports[1]["mode_params"]["tip_position"][
                              "position_z"]["reference"],
-                         "liquid_surface")
+                         "well_bottom")
         self.assertEqual(old_transports[2]["mode_params"]["tip_position"][
                              "position_z"]["reference"],
                          "well_bottom")
         self.assertEqual(new_transports[2]["mode_params"]["tip_position"][
+                             "position_z"]["reference"],
+                         "liquid_surface")
+        self.assertEqual(new_transports[3]["mode_params"]["tip_position"][
                              "position_z"]["reference"],
                          "well_top")
 
@@ -1478,8 +1483,8 @@ class MixTestCase(unittest.TestCase):
         p = Protocol()
         w = p.ref("test", None, "micro-1.5",
                   discard=True).well(0).set_volume("20:microliter")
-        p.mix(w, "5:microliter", new_defaults=False)
-        p.mix(w, "5:microliter", new_defaults=True)
+        p.mix(w, "5:microliter", repetitions=1, new_defaults=False)
+        p.mix(w, "5:microliter", repetitions=1, new_defaults=True)
         self.assertTrue(len(p.instructions), 2)
         # For now, mixes are not affected by new defaults
         self.assertEqual(p.instructions[0].locations,
