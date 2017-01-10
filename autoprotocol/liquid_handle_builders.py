@@ -182,6 +182,9 @@ def flowrate_builder(target, initial=None, cutoff=None, x_acceleration=None,
 
     arg_list = list(locals().items())
     arg_dict = {k: v for k, v in arg_list if v is not None}
+    arg_dict.pop("device", None)
+    arg_dict.pop("_valid_devices", None)
+
     return arg_dict if arg_dict else None
 
 
