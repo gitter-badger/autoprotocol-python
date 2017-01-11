@@ -57,7 +57,7 @@ def location_builder(location=None, transports=None, cycles=None,
          in the specified location
     cycles: Int, optional
         Number of cycles to repeat stated transports
-    x_object_volume: :List[Unit, Str], optional
+    x_object_volume: List[Unit, Str], optional
         Volume which we think is present in the aliquot. This will be used
         when the detection method "tracked" is used
 
@@ -238,7 +238,7 @@ def mode_params_builder(liquid_class=None, tip_x=None, tip_y=None, tip_z=None):
     tip_position_dict = {k: v for k, v in [("position_x", tip_x),
                                            ("position_y", tip_y),
                                            ("position_z", tip_z)] if v}
-    if tip_position_dict is not None:
+    if tip_position_dict is not None and len(tip_position_dict) > 0:
         mode_params_dict["tip_position"] = tip_position_dict
     return mode_params_dict
 
@@ -253,12 +253,12 @@ def z_position_builder(reference=None, offset=None,
 
     Parameters
     ----------
-    reference: String, optional
+    reference: str, optional
         Must be one of "well_top", "well_bottom", "liquid_surface",
          "preceding_position"
-    offset: Unit, optional
+    offset: Unit, str, optional
         Offset from reference position
-    detection_method: String, optional
+    detection_method: str, optional
         Must be one of "tracked", "pressure", "capacitance"
     detection_threshold: Unit, str, optional
         The threshold which must be crossed before a positive reading is
@@ -270,7 +270,7 @@ def z_position_builder(reference=None, offset=None,
         This is applicable for pressure detection methods
     fallback: z_position_builder(), optional
         Fallback option which will be used if sensing fails
-    device: String
+    device: str
         Checks parameters according to the specified device
     Returns
     -------
@@ -288,19 +288,17 @@ def z_position_builder(reference=None, offset=None,
         raise TypeError("Reference {} is not of type str".format(
             reference
         ))
-    if offset is not None and not isinstance(offset, Unit):
-        raise TypeError("Offset {} is not of type Unit".format(
-            offset
-        ))
+    if offset is not None:
+        offset = parse_unit(offset, "mm")
     if detection_method is not None and not isinstance(detection_method, str):
         raise TypeError("Detection_method {} is not of type str".format(
             detection_method
         ))
-    if detection_threshold is not None and not \
-            isinstance(detection_threshold, Unit):
-        raise TypeError("Detection_threshold {} is not of type Unit".format(
-            detection_threshold
-        ))
+    if detection_threshold is not None:
+        detection_threshold = parse_unit(detection_threshold,
+                                         ["farad", "pascal"])
+    if detection_duration is not None:
+        detection_duration = parse_unit(detection_duration, "s")
     if fallback is not None and not isinstance(fallback, dict):
         raise TypeError("Fallback {} is not of type dict".format(
             fallback
@@ -341,13 +339,9 @@ def z_position_builder(reference=None, offset=None,
                              "well_bottom references")
         position_z_dict["detection"] = dict(method=detection_method)
         if detection_threshold:
-            position_z_dict["detection"]["threshold"] = parse_unit(
-                detection_threshold, ["farad", "pascal"]
-            )
+            position_z_dict["detection"]["threshold"] = detection_threshold
         if detection_duration:
-            position_z_dict["detection"]["duration"] = parse_unit(
-                detection_duration, "s"
-            )
+            position_z_dict["detection"]["duration"] = detection_duration
         if fallback:
             position_z_dict["detection"]["fallback"] = fallback
     return position_z_dict
@@ -356,7 +350,7 @@ def z_position_builder(reference=None, offset=None,
 def mix_transports_helper(volume=Unit("50:microliter"),
                           speed=Unit("100:microliter/second"),
                           repetitions=10,
-                          z_height="1:mm",
+                          z_offset="1:mm",
                           new_defaults=None
                           ):
     """
@@ -370,7 +364,7 @@ def mix_transports_helper(volume=Unit("50:microliter"),
         flowrate of liquid during mixing
     repetitions : int, optional
         number of times to aspirate and expel liquid during mixing
-    z_height: Unit, str, optional
+    z_offset: Unit, str, optional
         If specified, moves to specified height above well_bottom before mixing.
         Otherwise, begins mixing from wherever the preceding position was
     new_defaults: bool, optional
@@ -381,16 +375,16 @@ def mix_transports_helper(volume=Unit("50:microliter"),
     ------
     Mix transports: List
     """
-    target_speed = Unit(speed) if speed else Unit("100:microliter/second")
+    target_speed = parse_unit(speed, "ul/s") if speed else Unit("100:ul/s")
     repetitions = repetitions if repetitions else 10
     mix_list = []
-    if z_height:
+    if z_offset:
         mix_list += [(
             transport_builder(
                 mode_params=mode_params_builder(
                     tip_z=z_position_builder(
                         reference="well_bottom",
-                        offset=Unit(z_height)
+                        offset=parse_unit(z_offset, "mm")
                     )
                 )
             )
@@ -1080,28 +1074,28 @@ def parse_xfer_params(volume, aspirate_speed=None, dispense_speed=None,
     return pipette_args
 
 
-def move_over_transport(z_height=None):
+def move_over_transport(z_offset=None):
     """
     Helper function for generating a transport which hovers above the target
     location
 
     Parameters
     ----------
-    z_height: Unit, str, Optional
-        If specified, controls the height above the bottom of the well
-        at which the head will travel to
+    z_offset: Unit, str, Optional
+        If specified, controls the height above the well bottom at which the
+        head will travel to
     Returns
     -------
     transport_list: List
     """
     transport_list = []
-    if z_height:
+    if z_offset:
         transport_list += [
             transport_builder(
                 mode_params=mode_params_builder(
                     tip_z=z_position_builder(
                         reference="well_bottom",
-                        offset=Unit(z_height)
+                        offset=Unit(z_offset)
                     )
                 )
             )
@@ -1509,7 +1503,7 @@ def stamp_asp_helper(volume, aspirate_flowrate=None, pre_buffer=None,
         mix_vol = Unit(mix_vol or (volume / 2))
         aspirate_transport_list += mix_transports_helper(mix_vol, mix_speed,
                                                          repetitions,
-                                                         z_height=None)
+                                                         z_offset=None)
 
     # Aspirate with primer + disposal vol
     if not primer_vol:
@@ -1667,6 +1661,7 @@ def parse_stamp_params(volume, aspirate_speed=None, dispense_speed=None,
         return following, z_pos_dict
 
     # Helper for generating old calibrated vol
+    # TODO: We need to address the SBS96 case once the 180 tips are onboarded
     def get_cal_vol(v):
         if shape_format == "SBS384":
             if v <= Unit("0.5:ul"):

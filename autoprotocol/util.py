@@ -560,13 +560,8 @@ def parse_unit(unit, accepted_unit=None):
         def parse_base_unit(base_unit):
             if not isinstance(base_unit, Unit):
                 if isinstance(base_unit, str):
-                    bu = base_unit.split(":")
-                    if len(bu) == 1:
-                        base_unit = "1:" + bu[0]
-                    elif len(bu) != 2:
-                        raise ValueError("{} is not a valid base unit".format(
-                            base_unit
-                        ))
+                    if ":" not in base_unit:
+                        base_unit = "1:" + base_unit
             return Unit(base_unit)
 
         if isinstance(accepted_unit, list):
@@ -576,5 +571,5 @@ def parse_unit(unit, accepted_unit=None):
         if all([unit.dimensionality != a_u.dimensionality for a_u in
                 accepted_unit]):
             raise TypeError("{} is not of the expected dimensionality "
-                            "{}".format(unit, accepted_unit.dimensionality))
+                            "{}".format(unit, accepted_unit))
     return unit
